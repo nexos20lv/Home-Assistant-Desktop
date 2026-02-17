@@ -7,9 +7,6 @@
 
 **The futuristic, dedicated desktop client for Home Assistant.**
 
-![Home Assistant Desktop Showcase](https://www.home-assistant.io/images/lovelace/lovelace_home.png)
-*(Conceptual screenshot of the Home Assistant Dashboard)*
-
 ---
 
 ## 🚀 Features
