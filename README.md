@@ -1,39 +1,65 @@
 # Home Assistant Desktop
 
-![Home Assistant Desktop Screenshot](screenshot.png) <!-- Conceptual placeholder -->
+![Build Status](https://github.com/nexos20lv/Home-Assistant-Desktop/actions/workflows/release.yml/badge.svg)
+![Version](https://img.shields.io/github/v/release/nexos20lv/Home-Assistant-Desktop?include_prereleases)
+![License](https://img.shields.io/github/license/nexos20lv/Home-Assistant-Desktop)
+![Downloads](https://img.shields.io/github/downloads/nexos20lv/Home-Assistant-Desktop/total)
 
-A premium, futuristic desktop client for Home Assistant built with Electron. Access your smart home directly from your PC with a dedicated, optimized application.
+**The futuristic, dedicated desktop client for Home Assistant.**
+
+![Home Assistant Desktop Showcase](https://www.home-assistant.io/images/lovelace/lovelace_home.png)
+*(Conceptual screenshot of the Home Assistant Dashboard)*
+
+---
 
 ## 🚀 Features
 
-*   **Dedicated Application**: Run Home Assistant outside of your browser.
-*   **Premium UI**: A custom, minimalist window frame with a futuristic design.
-*   **System Tray Integration**: Minimized app stays in the system tray for background access.
-*   **Global Shortcut**: Toggle the app instantly with `Ctrl + Alt + H`.
-*   **PC Sensors**: Report your PC's status (Active/Idle) and Battery key information back to Home Assistant for automations.
-*   **Auto-Launch**: Option to start automatically on Windows logon.
-*   **Zero Overlap**: Custom architecture ensures the title bar never obscures your dashboard.
+| Feature | Description |
+| :--- | :--- |
+| **🎨 Futuristic Design** | Glassmorphism UI, custom title bar, and smooth animations. |
+| **🖥️ Native Experience** | Runs independent of your browser. dedicated instance. |
+| **⚡ Performance** | optimized Electron build with hardware acceleration. |
+| **🖱️ System Tray** | Minimizes to tray for instant access. Background operation. |
+| **⌨️ Global Shortcuts** | Toggle the app instantly with `Ctrl + Alt + H`. |
+| **🔄 Auto-Updates** | Standard seamless updates in the background. |
+| **🔌 PC Sensors** | Reports your PC's **CPU**, **RAM**, **Battery**, and **Uptime** directly to Home Assistant. |
 
-## 🛠️ Installation
+## 📥 Installation
 
-1.  Download the latest release from the [Releases Page](../../releases).
-2.  Run the installer (`.exe`).
-3.  Launch the app and enter your Home Assistant URL (e.g., `http://homeassistant.local:8123`).
+### Windows
+1.  Download the latest installer (`.exe`) from the [Releases Page](https://github.com/nexos20lv/Home-Assistant-Desktop/releases).
+2.  Run the installer. The app will launch automatically.
+3.  Right-click the tray icon to access **Preferences** or **Quit**.
+
+### macOS
+1.  Download the Disk Image (`.dmg`) from Releases.
+2.  Drag the app to your Applications folder.
+
+### Linux
+1.  Download the `.deb` or `.rpm` package.
+2.  Install via your package manager (e.g., `sudo dpkg -i home-assistant-desktop_*.deb`).
+
+---
 
 ## ⚙️ Configuration
 
-*   **Preferences**: Click the gear icon in the title bar.
-    *   **Launch on Startup**: Toggle auto-start.
-    *   **Global Shortcut**: Enable/Disable `Ctrl + Alt + H`.
-    *   **PC Sensor Integration**: Enter a clear Long-Lived Access Token to enable sensor reporting.
+### Initial Setup
+On first launch, you will be asked for your **Home Assistant URL**.
+- **Local**: `http://homeassistant.local:8123`
+- **Remote**: `https://your-ha-instance.ui.nabu.casa`
 
-## ⌨️ Development
+### Preferences
+Access the Preferences via the **System Tray Icon** (Right Click -> Preferences) or the gear icon in the title bar.
 
-To build this application locally:
+*   **Launch on Startup**: Automatically start minimized.
+*   **Global Shortcut**: Enable/Disable `Ctrl + Alt + H`.
+*   **PC Sensors**: Enter your "Long-Lived Access Token" to enable sensor reporting.
+
+## 🛠️ Development
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/home-assistant-desktop.git
+git clone https://github.com/nexos20lv/Home-Assistant-Desktop.git
 
 # Install dependencies
 npm install
@@ -45,13 +71,10 @@ npm start
 npm run make
 ```
 
-## 🏗️ Architecture
+## 🤝 Contributing
 
-Built with:
-*   **Electron**: Core framework.
-*   **Electron Builder**: Packaging and distribution.
-*   **BrowserView**: For isolated, robust rendering of Home Assistant.
+Contributions are welcome! Please fork the repository and open a Pull Request.
 
 ## 📄 License
 
-MIT
+MIT © [NeXoS_20](https://github.com/nexos20lv)

@@ -1,38 +1,96 @@
-# Home Assistant Desktop - User Guide & Tutorial
+# User Guide - Home Assistant Desktop
 
-Welcome to your new dedicated Home Assistant dashboard! This guide will help you get set up and make the most of the advanced features.
+Welcome to the future of smart home control on your PC. This guide covers everything from installation to advanced sensor configuration.
 
-## 1. Initial Setup
+## Table of Contents
+1.  [Getting Started](#getting-started)
+2.  [Interface Overview](#interface-overview)
+3.  [PC Sensors Integration](#pc-sensors-integration)
+4.  [Shortcuts & Tricks](#shortcuts--tricks)
+5.  [Troubleshooting](#troubleshooting)
 
-1.  **Launch the App**: When you first start the app, you'll see a setup screen.
-2.  **Enter URL**: Type the address of your Home Assistant instance.
-    *   *Example*: `http://192.168.1.50:8123` or `https://my-ha.duckdns.org`.
-3.  **Connect**: Click connect. The app will save this URL.
+---
 
-## 2. Linking Your PC (Sensor Integration)
+## Getting Started
 
-To let your PC report its status (Active/Idle, Battery) to Home Assistant, you need an API Token.
+### 1. Connection
+When you first launch the app, you will see the **Setup Screen**.
+Enter your Home Assistant URL.
+*   Example: `http://192.168.1.50:8123`
+*   Example: `https://my-home.duckdns.org`
 
-### Step A: Get the Token from Home Assistant
-1.  Open Home Assistant (in the app or browser).
-2.  Click on your **User Profile** (your initials/picture at the bottom left of the sidebar).
-3.  Scroll down to the **Security** section.
-4.  Find **Long-Lived Access Tokens** and click **Create Token**.
-5.  Name it "Desktop App" and click OK.
-6.  **COPY THIS TOKEN IMMEDIATELY**. You won't see it again.
+> **Note**: If using HTTPS, ensure your certificate is valid.
 
-### Step B: Configure the App
-1.  In Home Assistant Desktop, click the **Gear Icon** (Preferences) in the top right title bar.
-2.  Paste the token into the **API Token** field.
-3.  Click **Save Changes**.
+### 2. Login
+Once connected, you will see your standard Home Assistant Login screen. Log in with your username and password. The app will remember your session.
 
-🎉 **Done!** You should now see two new sensors in Home Assistant:
-*   `sensor.desktop_status`: Shows "Active" when the app is running.
-*   `sensor.desktop_battery`: Shows battery percentage (if applicable).
+---
 
-## 3. Usage Tips
+## Interface Overview
 
-*   **System Tray**: When you close the window (X), the app **does not quit**. It minimizes to the tray (bottom right icons). Click the icon to bring it back.
-*   **Quit**: To fully close the app, right-click the tray icon and select **Quit**.
-*   **Shortcut**: Press `Ctrl + Alt + H` anywhere in Windows to instantly show/hide your dashboard.
-*   **Quick Reload**: Right-click the app icon in your taskbar and select **Reload** if the dashboard freezes.
+### The Shell
+Unlike a browser, this app uses a custom "Shell".
+*   **Top Bar**: Contains window controls and the **Preferences (Gear)** icon.
+*   **System Tray**: The app lives in your notification area (near the clock).
+    *   **Click**: Shows/Hides the window.
+    *   **Right-Click**: Opens the Context Menu (Show, Preferences, Reset, Quit).
+
+### Minimizing
+Clicking the **X** (Close) button usually **minimizes the app to the tray** instead of quitting it. This keeps your sensors running in the background. To fully quit, use the Tray Menu > Quit.
+
+---
+
+## PC Sensors Integration 🔋
+
+This app can report your computer's health to Home Assistant.
+
+### Step 1: Get a Token
+1.  Open Home Assistant.
+2.  Click on your **Profile** (User Icon) in the bottom left.
+3.  Scroll to the bottom to **Long-Lived Access Tokens**.
+4.  Click **Create Token**. Name it "Desktop App".
+5.  **Copy the weird long string of characters.**
+
+### Step 2: Configure App
+1.  Open Home Assistant Desktop.
+2.  Click the **Gear Icon** (Preferences).
+3.  Paste the token into the **PC Sensor Integration** field.
+4.  Click **Save**.
+
+### Step 3: Verify in Home Assistant
+Go to **Developer Tools > States** and look for:
+*   `sensor.desktop_status` (Active, Idle)
+*   `sensor.desktop_memory_usage` (RAM %)
+
+You can now use these in automations! (e.g., Turn on lights when PC is Active).
+
+---
+
+## Shortcuts & Tricks
+
+| Shortcut | Action |
+| :--- | :--- |
+| **Ctrl + Alt + H** | Boss Mode! Instantly hide/show the app. |
+| **F5** | Reload the page (if stuck). |
+| **Ctrl + R** | Reload the page. |
+| **Right-Click Tray** | Access "Reset Configuration" if you changed your URL. |
+
+---
+
+## Troubleshooting
+
+### "The app is stuck on a white screen"
+*   Right-click the Tray Icon and select **Reload**.
+*   Check your internet connection.
+
+### "I want to change my Home Assistant URL"
+*   Right-click the Tray Icon and select **Reset Configuration**. This will restart the app and bring you back to the Setup Screen.
+
+### "Sensors are not updating"
+*   Ensure the Token is correct in Preferences.
+*   Check if your PC has network access to Home Assistant.
+*   Restart the app.
+
+---
+
+**Need more help?** [Open an Issue on GitHub](https://github.com/nexos20lv/Home-Assistant-Desktop/issues).
