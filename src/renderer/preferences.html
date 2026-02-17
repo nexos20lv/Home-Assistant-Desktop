@@ -148,6 +148,14 @@
             opacity: 1;
             transform: translateX(-50%) translateY(0);
         }
+
+        .version-info {
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 15px;
+            opacity: 0.6;
+        }
     </style>
 </head>
 
@@ -192,6 +200,8 @@
 
             <button id="save-btn" class="save-btn">Save Changes</button>
             <button id="close-btn" class="close-btn">Close</button>
+
+            <div class="version-info">v<span id="app-version">...</span></div>
         </div>
     </div>
     <script>
@@ -201,6 +211,7 @@
             document.getElementById('auto-launch').checked = settings.autoLaunch;
             document.getElementById('global-shortcut').checked = settings.globalShortcut;
             document.getElementById('api-token').value = settings.apiToken || '';
+            document.getElementById('app-version').innerText = settings.appVersion || 'Unknown';
         })();
 
         document.getElementById('save-btn').addEventListener('click', async () => {

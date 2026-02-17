@@ -218,7 +218,8 @@ ipcMain.handle('get-settings', () => {
     return {
         autoLaunch: store.get('autoLaunch', false),
         globalShortcut: store.get('globalShortcut', false),
-        apiToken: store.get('apiToken', '')
+        apiToken: store.get('apiToken', ''),
+        appVersion: app.getVersion() // Send current version
     };
 });
 
