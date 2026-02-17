@@ -11,10 +11,15 @@ let mainWindow;
 let view;
 let tray;
 let isQuiting = false;
+// Handle Squirrel Startup (to avoid multiple instances)
+if (require('electron-squirrel-startup')) {
+    app.quit();
+}
 
 // Initialize Auto Updater
-require('update-electron-app')({
-    repo: 'nexos20lv/Home-Assistant-Desktop', // Updated repo
+const { updateElectronApp } = require('update-electron-app');
+updateElectronApp({
+    repo: 'nexos20lv/Home-Assistant-Desktop',
     updateInterval: '1 hour'
 });
 
