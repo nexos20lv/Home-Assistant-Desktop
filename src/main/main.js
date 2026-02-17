@@ -16,6 +16,33 @@ if (require('electron-squirrel-startup')) {
     app.quit();
 }
 
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+    app.quit();
+} else {
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+        // Someone tried to run a second instance, we should focus our window.
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+        }
+
+        // Check if the second instance was launched with --quit
+        if (commandLine.includes('--quit')) {
+            isQuiting = true;
+            app.quit();
+        }
+    });
+}
+
+// Check if launched with --quit (Cold Start)
+if (process.argv.includes('--quit')) {
+    app.quit();
+}
+
+
 // Initialize Auto Updater
 const { updateElectronApp } = require('update-electron-app');
 updateElectronApp({
@@ -189,11 +216,11 @@ app.whenReady().then(() => {
     app.setUserTasks([
         {
             program: process.execPath,
-            arguments: '--force-reload',
+            arguments: '--quit',
             iconPath: process.execPath,
             iconIndex: 0,
-            title: 'Reload',
-            description: 'Reload the application'
+            title: 'Quit App',
+            description: 'Quit the application completely'
         }
     ]);
 
