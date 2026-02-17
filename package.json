@@ -24,7 +24,8 @@
   "config": {
     "forge": {
       "packagerConfig": {
-        "icon": "./src/assets/logo"
+        "icon": "./src/assets/logo",
+        "executableName": "home-assistant-desktop"
       },
       "makers": [
         {
