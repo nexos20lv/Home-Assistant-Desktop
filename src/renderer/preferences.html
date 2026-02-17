@@ -195,11 +195,9 @@
         </div>
     </div>
     <script>
-        const { ipcRenderer } = require('electron');
-
-        // Load current settings
+        // Load current settings via exposed API
         (async () => {
-            const settings = await ipcRenderer.invoke('get-settings');
+            const settings = await window.prefsAPI.getSettings();
             document.getElementById('auto-launch').checked = settings.autoLaunch;
             document.getElementById('global-shortcut').checked = settings.globalShortcut;
             document.getElementById('api-token').value = settings.apiToken || '';
@@ -212,10 +210,11 @@
                 apiToken: document.getElementById('api-token').value
             };
 
-            await ipcRenderer.invoke('save-settings', settings);
+            await window.prefsAPI.saveSettings(settings);
 
             // Show Toast
             const toast = document.getElementById('toast');
+            toast.innerText = 'Settings Saved Successfully!';
             toast.classList.add('visible');
 
             // Hide and Close after delay

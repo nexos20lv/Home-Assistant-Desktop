@@ -81,7 +81,10 @@ function createMainWindow() {
 
     // Handle external links in default browser (for the View)
     view.webContents.setWindowOpenHandler(({ url }) => {
-        shell.openExternal(url);
+        // Security: Only allow http and https protocols
+        if (url.startsWith('http:') || url.startsWith('https:')) {
+            shell.openExternal(url);
+        }
         return { action: 'deny' };
     });
 }
@@ -324,8 +327,9 @@ function createPreferencesWindow() {
             height: 30
         },
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload-prefs.js')
         }
     });
     prefWindow.loadFile(path.join(__dirname, '../renderer/preferences.html'));
