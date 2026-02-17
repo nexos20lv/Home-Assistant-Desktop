@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, powerMonitor } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const fs = require('fs');
