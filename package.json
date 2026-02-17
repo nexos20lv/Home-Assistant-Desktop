@@ -69,10 +69,14 @@
     "@electron-forge/maker-squirrel": "^7.6.1",
     "@electron-forge/maker-zip": "^7.6.1",
     "electron": "^40.4.1",
-    "to-ico": "^1.1.5"
+    "to-ico": "^1.1.5",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5"
   },
-  "electron-squirrel-startup": "^1.0.1",
-  "electron-store": "^8.2.0",
-  "update-electron-app": "^3.1.2"
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "electron-store": "^8.2.0",
+    "update-electron-app": "^3.1.2"
+  }
 }
 }
