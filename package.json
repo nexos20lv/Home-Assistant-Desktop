@@ -1,7 +1,7 @@
 {
   "name": "home-assistant-desktop",
   "productName": "Home Assistant Desktop",
-  "version": "1.0.1",
+  "version": "1.0.11",
   "description": "A premium desktop client for Home Assistant",
   "repository": {
     "type": "git",
