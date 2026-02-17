@@ -54,7 +54,12 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           
-          # Create and push tag
+          # Commit the version bump
+          git add package.json
+          git commit -m "chore: release v$NEW_VERSION [skip ci]"
+          git push origin main
+
+          # Create and push tag (points to the new commit)
           git tag v$NEW_VERSION
           git push origin v$NEW_VERSION
 
