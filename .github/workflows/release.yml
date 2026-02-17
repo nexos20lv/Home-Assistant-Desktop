@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
   workflow_dispatch: # Allow manual trigger
 
 permissions:
@@ -39,6 +37,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rpm
 
+      - name: Auto-Version & Tag
+        id: version
+        # Only run on main branch push, skip if tag
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          # Create version based on run number: 1.0.<run_number>
+          NEW_VERSION="1.0.${{ github.run_number }}"
+          echo "VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          
+          # Update package.json
+          npm version $NEW_VERSION --no-git-tag-version
+          
+          # Configure Git
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # Create and push tag
+          git tag v$NEW_VERSION
+          git push origin v$NEW_VERSION
+
       - name: Build & Make
         run: npm run make
         env:
@@ -46,8 +65,10 @@ jobs:
 
       - name: Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+        # Run if it's a tag push OR if we just created a tag
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         with:
+          tag_name: v${{ env.VERSION }} # Use the generated version
           files: |
             out/make/squirrel.windows/x64/*.exe
             out/make/squirrel.windows/x64/*.msi
