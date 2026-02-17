@@ -1,0 +1,80 @@
+{
+  "name": "home-assistant-desktop",
+  "productName": "Home Assistant Desktop",
+  "version": "1.0.0",
+  "description": "A premium desktop client for Home Assistant",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nexos20lv/Home-Assistant-Desktop"
+  },
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "convert-icon": "node scripts/convert-icon.js"
+  },
+  "keywords": [
+    "home-assistant",
+    "desktop",
+    "electron"
+  ],
+  "author": "NeXoS_20",
+  "license": "MIT",
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "icon": "./src/assets/logo"
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "home_assistant_desktop",
+            "setupIcon": "./src/assets/logo.ico"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-dmg",
+          "config": {
+            "icon": "./src/assets/logo.png",
+            "format": "ULFO"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-deb",
+          "config": {
+            "options": {
+              "icon": "./src/assets/logo.png"
+            }
+          }
+        },
+        {
+          "name": "@electron-forge/maker-rpm",
+          "config": {
+            "options": {
+              "icon": "./src/assets/logo.png"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.6.1",
+    "@electron-forge/maker-deb": "^7.6.1",
+    "@electron-forge/maker-dmg": "^7.11.1",
+    "@electron-forge/maker-rpm": "^7.6.1",
+    "@electron-forge/maker-squirrel": "^7.6.1",
+    "@electron-forge/maker-zip": "^7.6.1",
+    "electron": "^40.4.1",
+    "to-ico": "^1.1.5"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1",
+    "electron-store": "^8.2.0",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
+    "update-electron-app": "^3.1.2"
+  }
+}

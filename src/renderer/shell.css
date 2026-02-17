@@ -1,0 +1,68 @@
+body {
+    margin: 0;
+    padding: 0;
+    background-color: #0f172a;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow: hidden;
+    user-select: none;
+}
+
+#titlebar {
+    height: 32px;
+    background: #0f172a;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    -webkit-app-region: drag;
+    position: relative;
+    z-index: 1000;
+}
+
+.app-icon img {
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.app-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: #cbd5e1;
+    flex-grow: 1;
+}
+
+.app-actions {
+    display: flex;
+    align-items: center;
+    -webkit-app-region: no-drag;
+    margin-right: 140px;
+    gap: 8px;
+}
+
+.app-actions button {
+    background: transparent;
+    border: none;
+    color: #cbd5e1;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    width: 32px;
+    height: 32px;
+}
+
+.app-actions button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #38bdf8;
+}
+
+.app-actions button svg {
+    width: 18px;
+    height: 18px;
+}

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preferences</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            padding: 20px;
+            height: auto;
+            display: block;
+            overflow-y: auto;
+        }
+
+        .container {
+            max-width: 100%;
+            animation: none;
+            padding: 0;
+        }
+
+        .card {
+            padding: 20px;
+            text-align: left;
+        }
+
+        h1 {
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .setting-info h3 {
+            margin: 0 0 5px 0;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .setting-info p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Toggle Switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #334155;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--accent-color);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
+
+        .api-section {
+            margin-top: 20px;
+        }
+
+        .api-input {
+            width: 100%;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .save-btn {
+            margin-top: 20px;
+        }
+
+        .close-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        .close-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: #10b981;
+            /* Green */
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .toast.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Preferences</h1>
+
+            <!-- Toast Element -->
+            <div id="toast" class="toast">Settings Saved Successfully!</div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h3>Launch on Startup</h3>
+                    <p>Start app automatically when you log in.</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="auto-launch">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h3>Global Shortcut</h3>
+                    <p>Toggle window with Ctrl + Alt + H</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="global-shortcut">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="api-section">
+                <div class="setting-info">
+                    <h3>PC Sensor Integration</h3>
+                    <p>Enter a Long-Lived Access Token to send PC stats (Battery, Status) to Home Assistant.</p>
+                </div>
+                <input type="password" id="api-token" class="api-input"
+                    placeholder="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...">
+            </div>
+
+            <button id="save-btn" class="save-btn">Save Changes</button>
+            <button id="close-btn" class="close-btn">Close</button>
+        </div>
+    </div>
+    <script>
+        const { ipcRenderer } = require('electron');
+
+        // Load current settings
+        (async () => {
+            const settings = await ipcRenderer.invoke('get-settings');
+            document.getElementById('auto-launch').checked = settings.autoLaunch;
+            document.getElementById('global-shortcut').checked = settings.globalShortcut;
+            document.getElementById('api-token').value = settings.apiToken || '';
+        })();
+
+        document.getElementById('save-btn').addEventListener('click', async () => {
+            const settings = {
+                autoLaunch: document.getElementById('auto-launch').checked,
+                globalShortcut: document.getElementById('global-shortcut').checked,
+                apiToken: document.getElementById('api-token').value
+            };
+
+            await ipcRenderer.invoke('save-settings', settings);
+
+            // Show Toast
+            const toast = document.getElementById('toast');
+            toast.classList.add('visible');
+
+            // Hide and Close after delay
+            setTimeout(() => {
+                toast.classList.remove('visible');
+                setTimeout(() => window.close(), 300);
+            }, 1000);
+        });
+
+        document.getElementById('close-btn').addEventListener('click', () => {
+            window.close();
+        });
+    </script>
+</body>
+
+</html>

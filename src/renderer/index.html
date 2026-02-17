@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Home Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" width="64" height="64">
+                    <path fill="currentColor" d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z" />
+                </svg>
+            </div>
+            <h1>Connect to Home</h1>
+            <p class="subtitle">Enter your Home Assistant URL to get started.</p>
+            
+            <form id="setup-form">
+                <div class="input-group">
+                    <input type="text" id="url-input" placeholder="http://homeassistant.local:8123" required>
+                    <span class="highlight"></span>
+                </div>
+                <button type="submit" id="connect-btn">
+                    <span>Connect</span>
+                    <div class="loader"></div>
+                </button>
+            </form>
+            
+            <p id="error-msg" class="error hidden"></p>
+        </div>
+    </div>
+    <script src="renderer.js"></script>
+</body>
+</html>

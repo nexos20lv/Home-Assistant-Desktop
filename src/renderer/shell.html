@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Assistant Desktop</title>
+    <link rel="stylesheet" href="shell.css">
+</head>
+
+<body>
+    <div id="titlebar">
+        <div class="app-icon">
+            <img src="../assets/logo.svg" alt="HA" />
+        </div>
+        <div class="app-title">Home Assistant Desktop</div>
+        <div class="window-controls">
+            <!-- Mac/Windows specific controls if we were fully custom, but we use titleBarOverlay for buttons -->
+        </div>
+        <div class="app-actions">
+            <button id="params-btn" title="Preferences">
+                <svg viewBox="0 0 24 24">
+                    <path fill="currentColor"
+                        d="M19.14,12.94C19.14,12.78 19.11,12.63 19.11,12.47C19.11,12.32 19.14,12.16 19.14,12C19.14,11.84 19.11,11.69 19.11,11.53C19.11,11.37 19.14,11.22 19.14,11.06L21.41,9.29C21.62,9.13 21.68,8.83 21.54,8.6L19.39,4.88C19.25,4.64 18.96,4.55 18.72,4.64L16.03,5.73C15.47,5.3 14.87,4.95 14.22,4.68L13.82,1.82C13.78,1.55 13.55,1.36 13.28,1.36H8.97C8.7,1.36 8.47,1.56 8.43,1.82L8.03,4.68C7.38,4.95 6.78,5.3 6.22,5.73L3.53,4.64C3.29,4.55 3,4.64 2.86,4.88L0.71,8.6C0.57,8.83 0.63,9.13 0.84,9.29L3.11,11.06C3.11,11.22 3.14,11.37 3.14,11.53C3.14,11.69 3.11,11.84 3.11,12C3.11,12.16 3.14,12.32 3.14,12.47C3.14,12.63 3.11,12.78 3.11,12.94L0.84,14.71C0.63,14.87 0.57,15.17 0.71,15.4L2.86,19.12C3,19.36 3.29,19.45 3.53,19.36L6.22,18.27C6.78,18.7 7.38,19.05 8.03,19.32L8.43,22.18C8.47,22.44 8.7,22.64 8.97,22.64H13.28C13.55,22.64 13.78,22.44 13.82,22.18L14.22,19.32C14.87,19.05 15.47,18.7 16.03,18.27L18.72,19.36C18.96,19.45 19.25,19.36 19.39,19.12L21.54,15.4C21.68,15.17 21.62,14.87 21.41,14.71L19.14,12.94M12,15.5C10.07,15.5 8.5,13.93 8.5,12C8.5,10.07 10.07,8.5 12,8.5C13.93,8.5 15.5,10.07 15.5,12C15.5,13.93 13.93,15.5 12,15.5Z" />
+                </svg>
+            </button>
+            <button id="disconnect-btn" title="Disconnect / Reset URL">
+                <svg viewBox="0 0 24 24">
+                    <path fill="currentColor"
+                        d="M17,7L15.59,8.41L18.17,11H8V13H18.17L15.59,15.58L17,17L22,12L17,7M4,5H12V3H4A2,2 0 0,0 2,5V19A2,2 0 0,0 4,21H12V19H4V5Z" />
+                </svg>
+            </button>
+        </div>
+    </div>
+    <script>
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        disconnectBtn.addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.resetConfig();
+            }
+        });
+
+        const paramsBtn = document.getElementById('params-btn');
+        paramsBtn.addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.openPreferences();
+            }
+        });
+    </script>
+</body>
+
+</html>
