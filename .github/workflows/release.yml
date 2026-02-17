@@ -57,6 +57,10 @@ jobs:
           # Commit the version bump
           git add package.json
           git commit -m "chore: release v$NEW_VERSION [skip ci]"
+          
+          # Pull latest changes to avoid conflicts
+          git pull origin main --rebase
+          
           git push origin main
 
           # Create and push tag (points to the new commit)

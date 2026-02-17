@@ -55,7 +55,8 @@ function createMainWindow() {
     view = new BrowserView({
         webPreferences: {
             nodeIntegration: false,
-            contextIsolation: true
+            contextIsolation: true,
+            partition: 'persist:homeassistant' // Critical for saving login session
         }
     });
 
@@ -63,6 +64,30 @@ function createMainWindow() {
 
     // Initial bounds setting
     updateViewBounds();
+
+    // Context Menu Implementation
+    view.webContents.on('context-menu', (event, params) => {
+        const menu = Menu.buildFromTemplate([
+            { label: 'Back', enabled: view.webContents.canGoBack(), click: () => view.webContents.goBack() },
+            { label: 'Forward', enabled: view.webContents.canGoForward(), click: () => view.webContents.goForward() },
+            { label: 'Reload', click: () => view.webContents.reload() },
+            { type: 'separator' },
+            { label: 'Copy Image Address', visible: params.mediaType === 'image', click: () => require('electron').clipboard.writeText(params.srcURL) }, // Fixed clipboard import
+            { label: 'Inspect Element', click: () => view.webContents.inspectElement(params.x, params.y) }
+        ]);
+        menu.popup(view);
+    });
+
+    // Permission Handling (Notifications, Camera, Mic)
+    const { session } = require('electron');
+    session.fromPartition('persist:homeassistant').setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowedPermissions = ['notifications', 'media', 'audioCapture', 'videoCapture'];
+        if (allowedPermissions.includes(permission)) {
+            callback(true);
+        } else {
+            callback(false);
+        }
+    });
 
     // Load HA URL into the view
     view.webContents.loadURL(haUrl);
