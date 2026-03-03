@@ -60,6 +60,12 @@ body {
 .app-actions button:hover {
     background: rgba(255, 255, 255, 0.15);
     color: #38bdf8;
+    transform: scale(1.05);
+}
+
+.app-actions button:active {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(0.95);
 }
 
 .app-actions button svg {

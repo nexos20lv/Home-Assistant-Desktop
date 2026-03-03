@@ -126,7 +126,6 @@ function createMainWindow() {
     mainWindow.on('enter-full-screen', updateViewBounds);
     mainWindow.on('leave-full-screen', updateViewBounds);
 
-    let isQuiting = false;
 
     mainWindow.on('close', function (event) {
         if (!isQuiting) {
@@ -213,16 +212,18 @@ app.whenReady().then(() => {
     startSensorReporting();
 
     // Jumplist
-    app.setUserTasks([
-        {
-            program: process.execPath,
-            arguments: '--quit',
-            iconPath: process.execPath,
-            iconIndex: 0,
-            title: 'Quit App',
-            description: 'Quit the application completely'
-        }
-    ]);
+    if (process.platform === 'win32') {
+        app.setUserTasks([
+            {
+                program: process.execPath,
+                arguments: '--quit',
+                iconPath: process.execPath,
+                iconIndex: 0,
+                title: 'Quit App',
+                description: 'Quit the application completely'
+            }
+        ]);
+    }
 
     // System Tray Implementation
     const { nativeImage } = require('electron');
@@ -230,7 +231,11 @@ app.whenReady().then(() => {
     console.log('Loading Tray Icon from:', iconPath);
 
     try {
-        const trayIcon = nativeImage.createFromPath(iconPath);
+        let trayIcon = nativeImage.createFromPath(iconPath);
+        if (process.platform === 'darwin') {
+            trayIcon = trayIcon.resize({ width: 16, height: 16 });
+            trayIcon.setTemplateImage(true);
+        }
         tray = new Tray(trayIcon);
 
         const contextMenu = Menu.buildFromTemplate([
@@ -303,6 +308,8 @@ ipcMain.handle('save-settings', (event, settings) => {
     return true;
 });
 
+const { machineIdSync } = require('node-machine-id');
+
 let sensorInterval;
 function startSensorReporting() {
     if (sensorInterval) clearInterval(sensorInterval);
@@ -312,10 +319,33 @@ function startSensorReporting() {
 
     if (!token || !haUrl) return;
 
+    let uniqueId = 'unknown_pc';
+    try {
+        uniqueId = machineIdSync();
+    } catch (error) {
+        console.error('Failed to get machine Id, generating random:', error);
+        const uuidFallback = store.get('uuidFallback');
+        if (uuidFallback) {
+            uniqueId = uuidFallback;
+        } else {
+            uniqueId = require('crypto').randomUUID();
+            store.set('uuidFallback', uniqueId);
+        }
+    }
+
+    let previousCpuInfo = getCpuInfo();
+
     const cpuInterval = setInterval(async () => {
-        // CPU Usage (Simple Load Average for now as os.cpus() is snapshot)
-        // For better CPU data, we'd need 'systeminformation' library but using os loads for simplicity/no-deps
-        const cpus = os.cpus();
+        const currentCpuInfo = getCpuInfo();
+        const idleDifference = currentCpuInfo.idle - previousCpuInfo.idle;
+        const totalDifference = currentCpuInfo.total - previousCpuInfo.total;
+
+        // Calculate CPU usage percentage
+        let cpuPercent = 0;
+        if (totalDifference > 0) {
+            cpuPercent = Math.round(100 - (100 * idleDifference / totalDifference));
+        }
+        previousCpuInfo = currentCpuInfo;
 
         // Memory Usage
         const totalMem = os.totalmem();
@@ -323,18 +353,31 @@ function startSensorReporting() {
         const usedMem = totalMem - freeMem;
         const memPercent = Math.round((usedMem / totalMem) * 100);
 
-        reportSensor(haUrl, token, 'sensor.desktop_memory_usage', {
+        const safeHostname = os.hostname().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
+        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_memory_usage`, {
             state: memPercent,
             attributes: {
                 friendly_name: `${os.hostname()} Memory Usage`,
                 unit_of_measurement: '%',
                 icon: 'mdi:memory',
                 total_memory_gb: (totalMem / (1024 ** 3)).toFixed(2),
-                free_memory_gb: (freeMem / (1024 ** 3)).toFixed(2)
+                free_memory_gb: (freeMem / (1024 ** 3)).toFixed(2),
+                unique_id: `${uniqueId}_memory`
             }
         });
 
-        reportSensor(haUrl, token, 'sensor.desktop_status', {
+        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_cpu_usage`, {
+            state: cpuPercent,
+            attributes: {
+                friendly_name: `${os.hostname()} CPU Usage`,
+                unit_of_measurement: '%',
+                icon: 'mdi:cpu-64-bit',
+                unique_id: `${uniqueId}_cpu`
+            }
+        });
+
+        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_status`, {
             state: 'Active',
             attributes: {
                 friendly_name: `${os.hostname()} Status`,
@@ -342,13 +385,28 @@ function startSensorReporting() {
                 platform: os.platform(),
                 arch: os.arch(),
                 uptime_hours: (os.uptime() / 3600).toFixed(2),
-                icon: 'mdi:desktop-tower'
+                icon: 'mdi:desktop-tower',
+                unique_id: `${uniqueId}_status`
             }
         });
     }, 60000);
 
-    // Store interval to clear later
     sensorInterval = cpuInterval;
+}
+
+function getCpuInfo() {
+    const cpus = os.cpus();
+    let idle = 0;
+    let total = 0;
+
+    for (const cpu of cpus) {
+        for (const type in cpu.times) {
+            total += cpu.times[type];
+        }
+        idle += cpu.times.idle;
+    }
+
+    return { idle, total };
 }
 
 function reportSensor(baseUrl, token, entityId, data) {
