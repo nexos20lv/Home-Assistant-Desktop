@@ -223,6 +223,17 @@
                 </label>
             </div>
 
+            <div class="setting-row">
+                <div class="setting-info">
+                    <h3>Auto-Updates</h3>
+                    <p>Keep the app up-to-date automatically (Recommended).</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="auto-updates">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
             <div class="api-section">
                 <div class="setting-info">
                     <h3>PC Sensor Integration</h3>
@@ -255,6 +266,7 @@
             const settings = await window.prefsAPI.getSettings();
             document.getElementById('auto-launch').checked = settings.autoLaunch;
             document.getElementById('global-shortcut').checked = settings.globalShortcut;
+            document.getElementById('auto-updates').checked = settings.autoUpdates !== false; // Default to true
             document.getElementById('api-token').value = settings.apiToken || '';
             document.getElementById('app-version').innerText = settings.appVersion || 'Unknown';
         })();
@@ -263,6 +275,7 @@
             const settings = {
                 autoLaunch: document.getElementById('auto-launch').checked,
                 globalShortcut: document.getElementById('global-shortcut').checked,
+                autoUpdates: document.getElementById('auto-updates').checked,
                 apiToken: document.getElementById('api-token').value
             };
 

@@ -45,10 +45,12 @@ if (process.argv.includes('--quit')) {
 
 // Initialize Auto Updater
 const { updateElectronApp } = require('update-electron-app');
-updateElectronApp({
-    repo: 'nexos20lv/Home-Assistant-Desktop',
-    updateInterval: '1 hour'
-});
+if (store.get('autoUpdates', true)) {
+    updateElectronApp({
+        repo: 'nexos20lv/Home-Assistant-Desktop',
+        updateInterval: '1 hour'
+    });
+}
 
 function createMainWindow() {
     const haUrl = store.get('haUrl');
@@ -137,7 +139,21 @@ function createMainWindow() {
 
     // Handle external links in default browser (for the View)
     view.webContents.setWindowOpenHandler(({ url }) => {
-        // Security: Only allow http and https protocols
+        const haUrl = store.get('haUrl');
+        
+        // If it's a popup from the same origin, allow it as a native window
+        if (haUrl && url.startsWith(haUrl)) {
+            return {
+                action: 'allow',
+                overrideBrowserWindowOptions: {
+                    width: 800,
+                    height: 600,
+                    autoHideMenuBar: true
+                }
+            };
+        }
+
+        // Security: Only allow http and https protocols for external
         if (url.startsWith('http:') || url.startsWith('https:')) {
             shell.openExternal(url);
         }
@@ -281,6 +297,7 @@ ipcMain.handle('get-settings', () => {
     return {
         autoLaunch: store.get('autoLaunch', false),
         globalShortcut: store.get('globalShortcut', false),
+        autoUpdates: store.get('autoUpdates', true),
         apiToken: store.get('apiToken', ''),
         appVersion: app.getVersion() // Send current version
     };
@@ -289,6 +306,7 @@ ipcMain.handle('get-settings', () => {
 ipcMain.handle('save-settings', (event, settings) => {
     store.set('autoLaunch', settings.autoLaunch);
     store.set('globalShortcut', settings.globalShortcut);
+    store.set('autoUpdates', settings.autoUpdates);
     store.set('apiToken', settings.apiToken);
 
     // 1. Auto Launch

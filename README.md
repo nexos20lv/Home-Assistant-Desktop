@@ -1,128 +1,133 @@
-# 🏠 Home Assistant Desktop
+# <img src="src/assets/logo.png" width="45" align="center"> Home Assistant Desktop
 
-[![Build Status](https://github.com/nexos20lv/Home-Assistant-Desktop/actions/workflows/release.yml/badge.svg)](https://github.com/nexos20lv/Home-Assistant-Desktop/actions)
-[![Version](https://img.shields.io/github/v/release/nexos20lv/Home-Assistant-Desktop?include_prereleases)](https://github.com/nexos20lv/Home-Assistant-Desktop/releases)
-[![License](https://img.shields.io/github/license/nexos20lv/Home-Assistant-Desktop)](https://github.com/nexos20lv/Home-Assistant-Desktop/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/nexos20lv/Home-Assistant-Desktop/total)](https://github.com/nexos20lv/Home-Assistant-Desktop/releases)
+<p align="left">
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-007AFF?style=for-the-badge" alt="Platform">
+  <img src="https://img.shields.io/github/v/release/nexos20lv/Home-Assistant-Desktop?style=for-the-badge&color=34C759" alt="Version">
+  <img src="https://img.shields.io/github/actions/workflow/status/nexos20lv/Home-Assistant-Desktop/release.yml?style=for-the-badge&label=Build" alt="Build">
+</p>
 
-**Home Assistant Desktop** is a premium, dedicated desktop client for [Home Assistant](https://www.home-assistant.io/). Built with Electron, it provide a native, high-performance experience that's completely independent of your browser, featuring a futuristic glassmorphism UI and deep system integration.
+### Experience the Future of Smart Home Control.
+**Home Assistant Desktop** is more than a window; it's a native bridge between your hardware and your home. High-performance, OS-integrated, and wrapped in a stunning glassmorphism shell.
 
----
-
-## ✨ Features
-
-### 🖥️ Native Experience
-- **Dedicated Instance**: No more searching through browser tabs. Home Assistant now lives as a first-class application on your desktop.
-- **Custom Title Bar**: A sleek, minimal title bar that blends perfectly with the Home Assistant dashboard.
-- **System Tray Integration**: Minimize the app to the tray to keep it running in the background without cluttering your taskbar.
-
-### 🔌 Real-Time PC Sensors
-Monitor your computer's health directly from your Home Assistant dashboards. The app automatically reports the following sensors:
-- **📊 CPU Usage**: Real-time percentage of processor load.
-- **🧠 Memory Usage**: Current RAM consumption and percentage.
-- **🔋 Battery Status**: Level and charging status (Supported on **Windows, macOS, and Linux**).
-- **⏱️ Uptime**: Standalone sensor tracking how long your system has been running.
-- **🛡️ Status**: Heartbeat sensor to monitor the connection state.
-
-### ⌨️ Productivity & UI
-- **Global Shortcut**: Press `Ctrl + Alt + H` (or `Cmd + Alt + H` on Mac) to toggle the window visibility instantly from anywhere.
-- **Glassmorphism Design**: A modern, transparent UI that feels premium and integrated.
-- **Auto-Updates**: Never worry about versions; the app updates itself seamlessly in the background.
+![App Mockup](ha_desktop_dashboard_mockup.png)
 
 ---
 
-## 📥 Installation
+## 🕹️ Interactive Feature Explorer
+*Click on a feature to deep dive into the technical details.*
 
-### Windows
-1.  Download the latest `.exe` installer from the [Releases Page](https://github.com/nexos20lv/Home-Assistant-Desktop/releases).
-2.  Run the setup. The application will install and launch automatically.
-3.  A desktop shortcut and start menu entry will be created.
+<details>
+<summary><b>🚀 Performance & Zero-Latency</b></summary>
+<br>
+Built on a custom Electron 40+ engine, the app uses <b>BrowserViews</b> instead of iframes to ensure the UI remains responsive even when loading heavy dashboards.
+<ul>
+  <li><b>Single-Instance Lock</b>: Prevents resource drain from accidental double-launches.</li>
+  <li><b>Partitioned Storage</b>: Keeps your HA session isolated and lightning-fast.</li>
+</ul>
+</details>
 
-### macOS
-1.  Download the `.dmg` file from the [Releases Page](https://github.com/nexos20lv/Home-Assistant-Desktop/releases).
-2.  Open the Disk Image and drag **Home Assistant Desktop** to your **Applications** folder.
-3.  Launch it from your Applications or via Spotlight.
+<details>
+<summary><b>🛰️ Real-Time Hardware Telemetry</b></summary>
+<br>
+The app doesn't just display your dashboard; it turns your PC into a Home Assistant device.
+<ul>
+  <li><b>CPU usage</b>: <code>sensor.[hostname]_desktop_cpu_usage</code></li>
+  <li><b>RAM usage</b>: <code>sensor.[hostname]_desktop_memory_usage</code></li>
+  <li><b>Battery</b>: Reports charging status and level via native platform APIs (pmset/PowerShell).</li>
+  <li><b>Unique ID</b>: Uses <code>node-machine-id</code> for stable hardware tracking.</li>
+</ul>
+</details>
 
-### Linux
-1.  Download the appropriate package (`.deb` for Debian/Ubuntu, `.rpm` for Fedora/RHEL) from [Releases](https://github.com/nexos20lv/Home-Assistant-Desktop/releases).
-2.  Install via your terminal:
-    ```bash
-    # Debian/Ubuntu
-    sudo dpkg -i home-assistant-desktop_*.deb
-    # Fedora/RHEL
-    sudo rpm -i home-assistant-desktop_*.rpm
-    ```
-
----
-
-## ⚙️ Configuration & Setup
-
-### 1. Connecting to Home Assistant
-On your first launch, you'll be greeted with a setup screen:
-- **URL**: Enter your Home Assistant instance URL (e.g., `http://homeassistant.local:8123` or your Nabu Casa remote URL).
-- The app uses a persistent session, so you'll only need to log in once.
-
-### 2. Enabling Sensors
-To enable the PC sensor reporting, you need to provide a **Long-Lived Access Token**:
-1.  Go to your Home Assistant Profile (click your name in the bottom left).
-2.  Scroll down to **Long-Lived Access Tokens**.
-3.  Click **Create Token**, give it a name (e.g., "Desktop App"), and copy the generated token.
-4.  In the Desktop App, right-click the Tray icon -> **Preferences**.
-5.  Paste the token into the **API Token** field and save.
-
-### 3. Preferences Explained
-- **Launch on Startup**: If enabled, the app will start automatically when you log into your computer and sit quietly in the tray.
-- **Global Shortcut**: Toggle the visibility of the app with a system-wide hotkey.
-- **Reset Configuration**: Clears your saved URL and Token and restarts the app.
+<details>
+<summary><b>🛡️ Security & OS Integration</b></summary>
+<br>
+Deeply integrated features for a native feel.
+<ul>
+  <li><b>Native Title Bar</b>: Uses <code>titleBarStyle: 'hidden'</code> with custom overlays for a seamless look.</li>
+  <li><b>System Tray</b>: Background monitoring and quick-toggle shortcuts.</li>
+  <li><b>Auto-Update</b>: Seamlessly powered by Squirrel (Win) and built-in update engine.</li>
+</ul>
+</details>
 
 ---
 
-## 🛠️ Technical Details
+## 🛠️ Setup Checklist
+*Follow these steps to get running in under 60 seconds.*
 
-### Sensor Architecture
-The app communicates with Home Assistant via its [REST API](https://developers.home-assistant.io/docs/api/rest/). Sensors are updated every **60 seconds**.
-- **macOS**: Battery info is retrieved using the `pmset` utility.
-- **Windows**: Battery info is retrieved via PowerShell `Win32_Battery` CIM instance.
-- **Linux**: Data is read directly from `/sys/class/power_supply/`.
-- **Unique IDs**: Each sensor is registered with a unique ID based on your machine's hardware ID (`node-machine-id`), preventing conflicts if you use the app on multiple computers.
-
----
-
-## ☕ Support the Project
-
-If you find this project useful and would like to support its development, you can buy me a coffee! Your support helps keep the project active and motivated.
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-orange?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/nexos20)
+- [ ] **1. Install the App** (Select your OS below)
+- [ ] **2. Link your HA URL** (Local, Nabu Casa, or DuckDNS)
+- [ ] **3. Configure API Access** (Generate a Long-Lived Token)
+- [ ] **4. Enable Background Mode** (Toggle in Preferences)
 
 ---
 
-## 👨‍💻 Development
+## 📦 One-Click Installation
 
-Want to contribute or build from source?
+<table width="100%">
+  <tr>
+    <td width="33%" align="center">
+      <b>🪟 Windows</b><br>
+      <a href="https://github.com/nexos20lv/Home-Assistant-Desktop/releases">Download .exe</a>
+    </td>
+    <td width="33%" align="center">
+      <b>🍎 macOS</b><br>
+      <a href="https://github.com/nexos20lv/Home-Assistant-Desktop/releases">Download .dmg</a>
+    </td>
+    <td width="33%" align="center">
+      <b>🐧 Linux</b><br>
+      <a href="https://github.com/nexos20lv/Home-Assistant-Desktop/releases">Download .deb</a>
+    </td>
+  </tr>
+</table>
+
+<details>
+<summary><b>⚠️ Fix macOS "App is damaged" error</b></summary>
+<br>
+If you cannot open the app after moving it to Applications, run this in your Terminal:
+<code>xattr -d com.apple.quarantine "/Applications/Home Assistant Desktop.app"</code>
+</details>
+
+---
+
+## ☕ Support the Evolution
+
+Maintaining a premium open-source project requires time and passion. If this app adds value to your life, consider supporting its development.
+
+<p align="center">
+  <a href="https://buymeacoffee.com/nexos20">
+    <img src="https://img.shields.io/badge/Buy_Me_A_Coffee-Support_Development-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Support">
+  </a>
+</p>
+
+---
+
+---
+
+## 💬 Community Feedback & FAQ
+
+**Q: Can I disable automatic updates?**
+**A:** Yes! Go to **Tray Icon > Preferences** and toggle **Auto-Updates** off. 
+
+**Q: Does it support notifications?**
+**A:** Fully. The app natively handles Home Assistant notification requests and displays them using your OS's notification system.
+
+**Q: Can I open camera popups in a separate window?**
+**A:** Yes! The app now automatically detects internal Home Assistant links and opens them in a native standalone window for better multitasking.
+
+---
+
+## 💻 Development & Build
 
 ```bash
-# 1. Clone the repository
+# 1. Clone
 git clone https://github.com/nexos20lv/Home-Assistant-Desktop.git
 
-# 2. Install Dependencies
-npm install
+# 2. Boot
+npm install && npm start
 
-# 3. Run in Dev Mode
-npm start
-
-# 4. Package for Production
+# 3. Build Production
 npm run make
 ```
 
----
-
-## 🤝 Contributing & Support
-
-- **Bugs/Features**: Please open an [Issue](https://github.com/nexos20lv/Home-Assistant-Desktop/issues) for any bugs or feature requests.
-- **Pull Requests**: Contributions are very welcome! Please follow the existing code style.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-Developed with ❤️ by [NeXoS_20](https://github.com/nexos20lv).
+*Crafted with ❤️ by [NeXoS_20](https://github.com/nexos20lv). Licensed under MIT.*
+*
