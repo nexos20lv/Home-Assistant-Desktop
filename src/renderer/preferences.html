@@ -163,6 +163,33 @@
             margin-top: 15px;
             opacity: 0.6;
         }
+        .support-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .support-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #ffdd00;
+            color: #000000;
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 13px;
+            margin-top: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .support-btn:hover {
+            transform: scale(1.02);
+            background: #ffea00;
+        }
     </style>
 </head>
 
@@ -205,6 +232,17 @@
                     placeholder="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...">
             </div>
 
+            <div class="support-section">
+                <div class="setting-info" style="text-align: left;">
+                    <h3 style="font-size: 14px;">Support Open Source</h3>
+                    <p>If you like this app, consider supporting its development!</p>
+                </div>
+                <a href="#" id="buy-coffee-lnk" class="support-btn">
+                    <img src="https://cdn.buymeacoffee.com/buttons/bmc-new-btn-logo.svg" alt="Buy me a coffee" style="height: 18px;">
+                    Buy Me a Coffee
+                </a>
+            </div>
+
             <button id="save-btn" class="save-btn">Save Changes</button>
             <button id="close-btn" class="close-btn">Close</button>
 
@@ -244,6 +282,11 @@
 
         document.getElementById('close-btn').addEventListener('click', () => {
             window.close();
+        });
+
+        document.getElementById('buy-coffee-lnk').addEventListener('click', (e) => {
+            e.preventDefault();
+            window.prefsAPI.openExternal('https://buymeacoffee.com/nexos20');
         });
     </script>
 </body>

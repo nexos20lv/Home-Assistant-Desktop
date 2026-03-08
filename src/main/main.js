@@ -242,6 +242,12 @@ app.whenReady().then(() => {
             { label: 'Show App', click: () => mainWindow && mainWindow.show() },
             { type: 'separator' },
             {
+                label: 'Support the Project (☕)', click: () => {
+                    shell.openExternal('https://buymeacoffee.com/nexos20');
+                }
+            },
+            { type: 'separator' },
+            {
                 label: 'Reset Configuration', click: () => {
                     store.delete('haUrl');
                     app.relaunch();
@@ -309,6 +315,82 @@ ipcMain.handle('save-settings', (event, settings) => {
 });
 
 const { machineIdSync } = require('node-machine-id');
+const { exec } = require('child_process');
+
+function getBatteryInfo() {
+    return new Promise((resolve) => {
+        if (process.platform === 'darwin') {
+            exec('pmset -g batt', (error, stdout) => {
+                if (error || !stdout) {
+                    resolve(null);
+                    return;
+                }
+
+                const percentMatch = stdout.match(/(\d+)%/);
+                const statusMatch = stdout.match(/;\s([^;]+);/);
+
+                if (percentMatch) {
+                    resolve({
+                        percent: parseInt(percentMatch[1]),
+                        status: statusMatch ? statusMatch[1].trim() : 'Unknown'
+                    });
+                } else {
+                    resolve(null);
+                }
+            });
+        } else if (process.platform === 'win32') {
+            // Use PowerShell for Windows
+            exec('powershell -Command "Get-CimInstance -ClassName Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json"', (error, stdout) => {
+                if (error || !stdout) {
+                    resolve(null);
+                    return;
+                }
+
+                try {
+                    const data = JSON.parse(stdout);
+                    // data could be an array if multiple batteries exist
+                    const battery = Array.isArray(data) ? data[0] : data;
+
+                    if (battery && battery.EstimatedChargeRemaining !== undefined) {
+                        let status = 'Unknown';
+                        // BatteryStatus codes: 1=Other, 2=Unknown, 3=Fully Charged, 4=Low, 5=Critical, 6=Charging, 7=Charging and High, 8=Charging and Low, 9=Charging and Critical, 10=Undefined, 11=Partially Charged
+                        if (battery.BatteryStatus === 3) status = 'full';
+                        else if ([6, 7, 8, 9].includes(battery.BatteryStatus)) status = 'charging';
+                        else if (battery.BatteryStatus === 2 || battery.BatteryStatus === 1) status = 'discharging';
+
+                        resolve({
+                            percent: battery.EstimatedChargeRemaining,
+                            status: status
+                        });
+                    } else {
+                        resolve(null);
+                    }
+                } catch (e) {
+                    resolve(null);
+                }
+            });
+        } else if (process.platform === 'linux') {
+            try {
+                const devices = fs.readdirSync('/sys/class/power_supply/');
+                const batteryDevice = devices.find(d => d.startsWith('BAT'));
+                if (batteryDevice) {
+                    const capacity = fs.readFileSync(`/sys/class/power_supply/${batteryDevice}/capacity`, 'utf8').trim();
+                    const status = fs.readFileSync(`/sys/class/power_supply/${batteryDevice}/status`, 'utf8').trim().toLowerCase();
+                    resolve({
+                        percent: parseInt(capacity),
+                        status: status
+                    });
+                } else {
+                    resolve(null);
+                }
+            } catch (e) {
+                resolve(null);
+            }
+        } else {
+            resolve(null);
+        }
+    });
+}
 
 let sensorInterval;
 function startSensorReporting() {
@@ -389,6 +471,32 @@ function startSensorReporting() {
                 unique_id: `${uniqueId}_status`
             }
         });
+
+        // Uptime sensor (standalone)
+        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_uptime`, {
+            state: (os.uptime() / 3600).toFixed(2),
+            attributes: {
+                friendly_name: `${os.hostname()} Uptime`,
+                unit_of_measurement: 'h',
+                icon: 'mdi:clock-outline',
+                unique_id: `${uniqueId}_uptime`
+            }
+        });
+
+        // Battery sensor (macOS only for now)
+        const batteryInfo = await getBatteryInfo();
+        if (batteryInfo) {
+            reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_battery`, {
+                state: batteryInfo.percent,
+                attributes: {
+                    friendly_name: `${os.hostname()} Battery`,
+                    unit_of_measurement: '%',
+                    icon: batteryInfo.status === 'charging' ? 'mdi:battery-charging' : 'mdi:battery',
+                    status: batteryInfo.status,
+                    unique_id: `${uniqueId}_battery`
+                }
+            });
+        }
     }, 60000);
 
     sensorInterval = cpuInterval;
@@ -470,4 +578,8 @@ ipcMain.handle('reset-config', () => {
 
 ipcMain.on('open-preferences', () => {
     createPreferencesWindow();
+});
+
+ipcMain.on('open-external', (event, url) => {
+    shell.openExternal(url);
 });
