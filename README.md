@@ -9,8 +9,6 @@
 ### Experience the Future of Smart Home Control.
 **Home Assistant Desktop** is more than a window; it's a native bridge between your hardware and your home. High-performance, OS-integrated, and wrapped in a stunning glassmorphism shell.
 
-![App Mockup](ha_desktop_dashboard_mockup.png)
-
 ---
 
 ## 🕹️ Interactive Feature Explorer
