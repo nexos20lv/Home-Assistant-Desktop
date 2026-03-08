@@ -5,303 +5,510 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Preferences</title>
-    <link rel="stylesheet" href="styles.css">
     <style>
+        :root {
+            --bg-color: #0c111d;
+            --bg-glass: rgba(15, 23, 42, 0.88);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --sidebar-bg: rgba(7, 11, 25, 0.5);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.25);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: rgba(255, 255, 255, 0.45);
+            --input-bg: rgba(255, 255, 255, 0.03);
+            --item-hover: rgba(255, 255, 255, 0.06);
+        }
+
         body {
-            padding: 20px;
-            height: auto;
-            display: block;
-            overflow-y: auto;
-        }
-
-        .container {
-            max-width: 100%;
-            animation: none;
+            margin: 0;
             padding: 0;
+            background: var(--bg-color);
+            color: var(--text-primary);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow: hidden;
+            height: 100vh;
+            -webkit-app-region: drag;
         }
 
-        .card {
-            padding: 20px;
+        .prefs-container {
+            display: flex;
+            height: 100vh;
+            background: var(--bg-glass);
+            backdrop-filter: blur(40px);
+            -webkit-app-region: no-drag;
+        }
+
+        /* Sidebar Tabs */
+        .sidebar {
+            width: 190px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border-glass);
+            padding: 40px 14px 20px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            -webkit-app-region: drag;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 10px 14px;
+            border-radius: 10px;
             text-align: left;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            -webkit-app-region: no-drag;
         }
 
-        h1 {
-            font-size: 20px;
-            margin-bottom: 20px;
+        .tab-btn svg { width: 18px; height: 18px; opacity: 0.6; transition: 0.2s; }
+
+        .tab-btn:hover {
+            background: var(--item-hover);
+            color: #fff;
         }
 
+        .tab-btn.active {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--accent);
+            box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.2);
+        }
+        .tab-btn.active svg { opacity: 1; stroke: var(--accent); }
+
+        /* Main Content area */
+        .content-area {
+            flex: 1;
+            padding: 42px 34px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Scrollbar */
+        .content-area::-webkit-scrollbar { width: 6px; }
+        .content-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            flex-direction: column;
+            gap: 28px;
+        }
+
+        .tab-content.active { display: flex; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-header {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            margin-bottom: 2px;
+            font-weight: 700;
+            opacity: 0.9;
+        }
+
+        /* Settings Rows */
         .setting-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            gap: 24px;
         }
 
-        .setting-info h3 {
-            margin: 0 0 5px 0;
-            font-size: 16px;
-            font-weight: 500;
+        .setting-row.vertical {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 12px;
         }
 
-        .setting-info p {
-            margin: 0;
+        .setting-info { flex: 1; }
+        .setting-info h3 { font-size: 15px; margin: 0 0 4px 0; font-weight: 500; letter-spacing: -0.01em; }
+        .setting-info p { font-size: 12px; margin: 0; color: var(--text-secondary); line-height: 1.5; }
+
+        /* Inputs & Textareas */
+        input[type="text"], input[type="password"], textarea {
+            background: var(--input-bg);
+            border: 1px solid var(--border-glass);
+            border-radius: 10px;
+            color: #fff;
+            padding: 12px 14px;
             font-size: 13px;
-            color: var(--text-secondary);
+            width: 100%;
+            outline: none;
+            transition: all 0.2s;
+            box-sizing: border-box;
+            font-family: inherit;
         }
 
-        /* Toggle Switch */
+        input:focus, textarea:focus {
+            border-color: var(--accent);
+            background: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        textarea { resize: none; }
+
+        /* Toggle Button (Apple style) */
         .switch {
             position: relative;
             display: inline-block;
-            width: 44px;
+            width: 42px;
             height: 24px;
+            flex-shrink: 0;
+            -webkit-app-region: no-drag;
         }
-
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
+        .switch input { opacity: 0; width: 0; height: 0; }
         .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #334155;
-            transition: .4s;
-            border-radius: 24px;
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255, 255, 255, 0.1);
+            transition: .3s; border-radius: 24px;
         }
-
         .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
+            position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+            background-color: white; transition: .3s; border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
+        input:checked+.slider { background-color: var(--accent); }
+        input:checked+.slider:before { transform: translateX(18px); }
 
-        input:checked+.slider {
-            background-color: var(--accent-color);
-        }
-
-        input:checked+.slider:before {
-            transform: translateX(20px);
-        }
-
-        .api-section {
-            margin-top: 20px;
-        }
-
-        .api-input {
-            width: 100%;
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 12px;
-        }
-
-        .save-btn {
-            margin-top: 20px;
-        }
-
-        .close-btn {
-            background: transparent;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-secondary);
-            margin-top: 10px;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .close-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            border-color: rgba(255, 255, 255, 0.2);
-            transform: translateY(-1px);
-        }
-
-        .close-btn:active {
-            transform: translateY(1px);
-        }
-
-        /* Toast Notification */
-        .toast {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%) translateY(20px);
-            background: #10b981;
-            /* Green */
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: 500;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            opacity: 0;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            pointer-events: none;
-            z-index: 50;
-        }
-
-        .toast.visible {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-        }
-
-        .version-info {
-            text-align: center;
-            font-size: 11px;
-            color: var(--text-secondary);
-            margin-top: 15px;
-            opacity: 0.6;
-        }
-        .support-section {
-            margin-top: 20px;
-            padding: 15px;
+        /* Server Cards */
+        #servers-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+        .server-card {
             background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glass);
             border-radius: 12px;
-            text-align: center;
+            padding: 16px;
+            position: relative;
+            transition: 0.2s;
+        }
+        .server-card:hover { background: rgba(255, 255, 255, 0.04); border-color: rgba(255,255,255,0.15); }
+        
+        .server-card input {
+            background: rgba(0, 0, 0, 0.2);
+            margin-bottom: 8px;
         }
 
-        .support-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: #ffdd00;
-            color: #000000;
-            padding: 8px 16px;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 13px;
-            margin-top: 10px;
-            transition: all 0.2s ease;
+        .server-card .remove-btn {
+            position: absolute; top: -8px; right: -8px;
+            width: 24px; height: 24px;
+            background: #ef4444; color: #fff; border: none; border-radius: 50%;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: bold; border: 2px solid #0c111d;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            transition: 0.2s;
+            z-index: 10;
         }
 
-        .support-btn:hover {
-            transform: scale(1.02);
-            background: #ffea00;
+        /* Action Buttons at bottom */
+        .footer-group {
+            margin-top: auto;
+            padding-top: 30px;
+            display: flex;
+            gap: 14px;
+            justify-content: flex-end;
+            background: linear-gradient(to top, var(--bg-glass) 80%, transparent);
+            padding-bottom: 30px;
+            position: sticky;
+            bottom: -34px;
+            z-index: 100;
         }
+
+        .primary-btn {
+            background: var(--accent); color: #0c111d; font-weight: 600;
+            border: none; padding: 11px 28px; border-radius: 10px; cursor: pointer;
+            transition: all 0.2s; font-size: 13px;
+            box-shadow: 0 4px 12px var(--accent-glow);
+            -webkit-app-region: no-drag;
+        }
+        .primary-btn:hover { transform: translateY(-1.5px); opacity: 0.95; box-shadow: 0 6px 16px var(--accent-glow); }
+        .primary-btn:active { transform: translateY(0); }
+
+        .secondary-btn {
+            background: rgba(255, 255, 255, 0.06); color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.1); padding: 11px 28px;
+            border-radius: 10px; cursor: pointer; transition: 0.2s; font-size: 13px;
+            -webkit-app-region: no-drag;
+        }
+        .secondary-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: rgba(255,255,255,0.2); }
+
+        .add-btn {
+            background: rgba(56, 189, 248, 0.05); border: 1.5px dashed rgba(56, 189, 248, 0.2);
+            color: var(--accent); width: 100%; padding: 14px; border-radius: 12px;
+            cursor: pointer; transition: 0.2s; font-size: 13px; font-weight: 600;
+            -webkit-app-region: no-drag;
+        }
+        .add-btn:hover { background: rgba(56, 189, 248, 0.1); border-color: var(--accent); }
+
+        #toast {
+            position: fixed; top: 22px; right: 22px;
+            background: #10b981; color: #fff; padding: 12px 24px;
+            border-radius: 14px; font-size: 14px; font-weight: 600;
+            transform: translateY(-150%); transition: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 2000; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+        }
+        #toast.visible { transform: translateY(0); }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <div class="card">
-            <h1>Preferences</h1>
+    <div id="toast">Settings successfully saved</div>
 
-            <!-- Toast Element -->
-            <div id="toast" class="toast">Settings Saved Successfully!</div>
+    <div class="prefs-container">
+        <div class="sidebar">
+            <button class="tab-btn active" onclick="showTab('general', this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x1="9" y2="21"/></svg>
+                General
+            </button>
+            <button class="tab-btn" onclick="showTab('sensors', this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                Sensors
+            </button>
+            <button class="tab-btn" onclick="showTab('advanced', this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                Advanced
+            </button>
+            
+            <div style="margin-top: auto; padding: 12px; font-size: 11px; color: var(--text-muted); text-align: center;">
+                v<span id="app-version">...</span>
+            </div>
+        </div>
 
-            <div class="setting-row">
-                <div class="setting-info">
-                    <h3>Launch on Startup</h3>
-                    <p>Start app automatically when you log in.</p>
+        <div class="content-area">
+            <!-- GENERAL TAB -->
+            <div id="tab-general" class="tab-content active">
+                <div>
+                  <div class="section-header">Connection</div>
+                  <div style="height: 12px;"></div>
+                  <div class="setting-row vertical">
+                      <div class="setting-info">
+                          <h3>Local Instance URL</h3>
+                          <p>The primary address (e.g., http://192.168.1.5:8123).</p>
+                      </div>
+                      <input type="text" id="ha-url" placeholder="http://homeassistant.local:8123">
+                  </div>
+                  
+                  <div class="setting-row vertical">
+                      <div class="setting-info">
+                          <h3>Remote Instance URL</h3>
+                          <p>Used when away from home (e.g., Nabu Casa or Cloudflare URL).</p>
+                      </div>
+                      <input type="text" id="remote-url" placeholder="https://xyz.ui.nabu.casa">
+                  </div>
+
+                  <div class="setting-row">
+                      <div class="setting-info">
+                          <h3>Use Remote URL</h3>
+                          <p>Force the application to use the remote address.</p>
+                      </div>
+                      <label class="switch">
+                          <input type="checkbox" id="use-remote">
+                          <span class="slider"></span>
+                      </label>
+                  </div>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="auto-launch">
-                    <span class="slider"></span>
-                </label>
+
+                <div>
+                  <div class="section-header">System behavior</div>
+                  <div style="height: 12px;"></div>
+                  <div class="setting-row">
+                      <div class="setting-info">
+                          <h3>Launch on Startup</h3>
+                          <p>Start Home Assistant automatically when you log in.</p>
+                      </div>
+                      <label class="switch">
+                          <input type="checkbox" id="auto-launch">
+                          <span class="slider"></span>
+                      </label>
+                  </div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Global Shortcut</h3>
+                        <p>Quickly toggle the window using <b>Alt + H</b>.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="global-shortcut">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Auto-Updates</h3>
+                        <p>Receive the latest features and bug fixes automatically.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="auto-updates">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Biometric Lock</h3>
+                        <p>Restrict access with TouchID verification.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="biometric-lock">
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </div>
 
-            <div class="setting-row">
-                <div class="setting-info">
-                    <h3>Global Shortcut</h3>
-                    <p>Toggle window with Ctrl + Alt + H</p>
+            <!-- SENSORS TAB -->
+            <div id="tab-sensors" class="tab-content">
+                <div>
+                  <div class="section-header">Desktop Telemetry</div>
+                  <div style="height: 8px;"></div>
+                  <div class="setting-row vertical">
+                      <div class="setting-info">
+                          <h3>Remote API Access Token</h3>
+                          <p>Used to send hardware sensors (Battery, CPU, RAM) to HA.</p>
+                      </div>
+                      <input type="password" id="api-token" style="font-family: monospace;" placeholder="Full long-lived access token">
+                  </div>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="global-shortcut">
-                    <span class="slider"></span>
-                </label>
+
+                <div class="setting-row vertical">
+                    <div class="setting-info">
+                        <h3>Default Media Player</h3>
+                        <p>Keyboard media keys will target this entity ID.</p>
+                    </div>
+                    <input type="text" id="media-entity" placeholder="media_player.itunes_mac">
+                </div>
+
+                <div style="height: 12px;"></div>
+                <div class="section-header">OS Integration</div>
+                <div style="height: 8px;"></div>
+                
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Mic/Camera Reporting</h3>
+                        <p>Detect when your mic or camera is active (Mac/Win).</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="report-media">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>DND / Focus Sync</h3>
+                        <p>Sync "Do Not Disturb" state with Home Assistant.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="report-dnd">
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </div>
 
-            <div class="setting-row">
-                <div class="setting-info">
-                    <h3>Auto-Updates</h3>
-                    <p>Keep the app up-to-date automatically (Recommended).</p>
+            <!-- ADVANCED TAB -->
+            <div id="tab-advanced" class="tab-content">
+                <div>
+                  <div class="section-header">Developer Tools</div>
+                  <div style="height: 8px;"></div>
+                  <div class="setting-row vertical">
+                      <div class="setting-info">
+                          <h3>Startup Automation</h3>
+                          <p>Execute shell commands on app boot (one per line).</p>
+                      </div>
+                      <textarea id="startup-scripts" style="height: 85px; font-family: monospace;" placeholder="echo 'Ready to control'"></textarea>
+                  </div>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="auto-updates">
-                    <span class="slider"></span>
-                </label>
+
+                <div class="setting-row vertical">
+                    <div class="setting-info">
+                        <h3>Dashboard CSS</h3>
+                        <p>Inject user styles directly into the Home Assistant UI.</p>
+                    </div>
+                    <textarea id="custom-css" style="height: 125px; font-family: monospace;" placeholder=".sidebar { background: transparent; }"></textarea>
+                </div>
             </div>
 
-            <div class="api-section">
-                <div class="setting-info">
-                    <h3>PC Sensor Integration</h3>
-                    <p>Enter a Long-Lived Access Token to send PC stats (Battery, Status) to Home Assistant.</p>
-                </div>
-                <input type="password" id="api-token" class="api-input"
-                    placeholder="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...">
+            <div class="footer-group">
+                <button class="secondary-btn" id="close-btn">Discard</button>
+                <button class="primary-btn" id="save-btn">Save Preferences</button>
             </div>
-
-            <div class="support-section">
-                <div class="setting-info" style="text-align: left;">
-                    <h3 style="font-size: 14px;">Support Open Source</h3>
-                    <p>If you like this app, consider supporting its development!</p>
-                </div>
-                <a href="#" id="buy-coffee-lnk" class="support-btn">
-                    <img src="https://cdn.buymeacoffee.com/buttons/bmc-new-btn-logo.svg" alt="Buy me a coffee" style="height: 18px;">
-                    Buy Me a Coffee
-                </a>
-            </div>
-
-            <button id="save-btn" class="save-btn">Save Changes</button>
-            <button id="close-btn" class="close-btn">Close</button>
-
-            <div class="version-info">v<span id="app-version">...</span></div>
         </div>
     </div>
+
     <script>
-        // Load current settings via exposed API
-        (async () => {
-            const settings = await window.prefsAPI.getSettings();
-            document.getElementById('auto-launch').checked = settings.autoLaunch;
-            document.getElementById('global-shortcut').checked = settings.globalShortcut;
-            document.getElementById('auto-updates').checked = settings.autoUpdates !== false; // Default to true
-            document.getElementById('api-token').value = settings.apiToken || '';
-            document.getElementById('app-version').innerText = settings.appVersion || 'Unknown';
-        })();
+        function showTab(tabId, element) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            element.classList.add('active');
+        }
+
+        async function init() {
+            try {
+                const settings = await window.prefsAPI.getSettings();
+                document.getElementById('ha-url').value = settings.haUrl || '';
+                document.getElementById('remote-url').value = settings.remoteUrl || '';
+                document.getElementById('use-remote').checked = settings.useRemote || false;
+                document.getElementById('auto-launch').checked = settings.autoLaunch;
+                document.getElementById('global-shortcut').checked = settings.globalShortcut;
+                document.getElementById('auto-updates').checked = settings.autoUpdates !== false;
+                document.getElementById('biometric-lock').checked = settings.biometricLock || false;
+                document.getElementById('media-entity').value = settings.mediaPlayerEntity || '';
+                document.getElementById('custom-css').value = settings.customCSS || '';
+                document.getElementById('startup-scripts').value = settings.startupScripts || '';
+                document.getElementById('api-token').value = settings.apiToken || '';
+                document.getElementById('report-media').checked = settings.reportMedia !== false;
+                document.getElementById('report-dnd').checked = settings.reportDnd !== false;
+                document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
+            } catch (err) {
+                console.error("Init Error:", err);
+            }
+        }
 
         document.getElementById('save-btn').addEventListener('click', async () => {
             const settings = {
+                haUrl: document.getElementById('ha-url').value,
+                remoteUrl: document.getElementById('remote-url').value,
+                useRemote: document.getElementById('use-remote').checked,
                 autoLaunch: document.getElementById('auto-launch').checked,
                 globalShortcut: document.getElementById('global-shortcut').checked,
                 autoUpdates: document.getElementById('auto-updates').checked,
-                apiToken: document.getElementById('api-token').value
+                biometricLock: document.getElementById('biometric-lock').checked,
+                startupScripts: document.getElementById('startup-scripts').value,
+                mediaPlayerEntity: document.getElementById('media-entity').value,
+                customCSS: document.getElementById('custom-css').value,
+                apiToken: document.getElementById('api-token').value,
+                reportMedia: document.getElementById('report-media').checked,
+                reportDnd: document.getElementById('report-dnd').checked
             };
 
             await window.prefsAPI.saveSettings(settings);
 
-            // Show Toast
             const toast = document.getElementById('toast');
-            toast.innerText = 'Settings Saved Successfully!';
             toast.classList.add('visible');
 
-            // Hide and Close after delay
             setTimeout(() => {
                 toast.classList.remove('visible');
-                setTimeout(() => window.close(), 300);
-            }, 1000);
+                setTimeout(() => window.close(), 250);
+            }, 1200);
         });
 
-        document.getElementById('close-btn').addEventListener('click', () => {
-            window.close();
-        });
-
-        document.getElementById('buy-coffee-lnk').addEventListener('click', (e) => {
-            e.preventDefault();
-            window.prefsAPI.openExternal('https://buymeacoffee.com/nexos20');
-        });
+        document.getElementById('close-btn').addEventListener('click', () => window.close());
+        
+        init();
     </script>
 </body>
-
 </html>

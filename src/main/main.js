@@ -1,9 +1,13 @@
-const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, nativeTheme, powerMonitor } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const fs = require('fs');
 const os = require('os');
 const https = require('http'); // Using http for local IP, could be https if SSL needed
+const { exec } = require('child_process');
+const { machineIdSync } = require('node-machine-id');
+const util = require('util');
+const execPromise = util.promisify(exec);
 
 const store = new Store();
 
@@ -27,6 +31,12 @@ if (!gotTheLock) {
             if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.show();
             mainWindow.focus();
+        }
+
+        // Deep linking on Windows/Linux
+        const url = commandLine.find(arg => arg.startsWith('ha-desktop://'));
+        if (url) {
+            handleDeepLink(url);
         }
 
         // Check if the second instance was launched with --quit
@@ -53,7 +63,7 @@ if (store.get('autoUpdates', true)) {
 }
 
 function createMainWindow() {
-    const haUrl = store.get('haUrl');
+    const haUrl = getEffectiveUrl();
 
     if (!haUrl) {
         createSetupWindow();
@@ -68,7 +78,7 @@ function createMainWindow() {
         titleBarOverlay: {
             color: '#0f172a',
             symbolColor: '#ffffff',
-            height: 32 // Match shell.css titlebar height
+            height: 40 // Match shell.css titlebar height
         },
         webPreferences: {
             nodeIntegration: false,
@@ -91,8 +101,60 @@ function createMainWindow() {
 
     mainWindow.setBrowserView(view);
 
+    view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+        const haUrl = store.get('haUrl');
+        const remoteUrl = store.get('remoteUrl');
+        
+        // If we failed on the local URL and have a remote URL, try that
+        if (validatedURL.includes(haUrl) && remoteUrl && haUrl !== remoteUrl) {
+            console.log('Local URL failed, trying remote URL...');
+            view.webContents.loadURL(remoteUrl);
+        }
+    });
+
     // Initial bounds setting
     updateViewBounds();
+
+    // Dark Mode Sync
+    const syncTheme = () => {
+        const isDark = nativeTheme.shouldUseDarkColors;
+        view.webContents.executeJavaScript(`
+            if (document.querySelector('home-assistant')) {
+                const ha = document.querySelector('home-assistant');
+                if (ha.saveTokens) {
+                    // Force HA theme if possible, or just let it react to (prefers-color-scheme)
+                    console.log('Syncing theme with OS: ' + (isDark ? 'dark' : 'light'));
+                }
+            }
+        `);
+    };
+
+    nativeTheme.on('updated', syncTheme);
+    view.webContents.on('did-finish-load', () => {
+        syncTheme();
+        const customCSS = store.get('customCSS', '');
+        if (customCSS) {
+            view.webContents.insertCSS(customCSS);
+        }
+    });
+
+    // Media Keys Integration
+    const sendMediaService = (service) => {
+        const haUrl = getEffectiveUrl();
+        const apiToken = store.get('apiToken');
+        const entityId = store.get('mediaPlayerEntity', 'media_player.all'); // Fallback or user-defined
+
+        if (!haUrl || !apiToken) return;
+
+        axios.post(`${haUrl}/api/services/media_player/${service}`, 
+            { entity_id: entityId },
+            { headers: { Authorization: `Bearer ${apiToken}` } }
+        ).catch(err => console.error(`Media Key Error (${service}):`, err.message));
+    };
+
+    globalShortcut.register('MediaPlayPause', () => sendMediaService('media_play_pause'));
+    globalShortcut.register('MediaNextTrack', () => sendMediaService('media_next_track'));
+    globalShortcut.register('MediaPreviousTrack', () => sendMediaService('media_previous_track'));
 
     // Context Menu Implementation
     view.webContents.on('context-menu', (event, params) => {
@@ -167,7 +229,7 @@ function updateViewBounds() {
     const contentBounds = mainWindow.getContentBounds();
 
     // Title bar height from shell.css is 32px
-    const titleBarHeight = 32;
+    const titleBarHeight = 40;
 
     // We strive to fill the window below the title bar
     // Note: on Windows with 'hidden' titleBarStyle, getContentBounds might include the title bar area
@@ -212,8 +274,39 @@ function createSetupWindow() {
     });
 }
 
-app.whenReady().then(() => {
+ipcMain.handle('run-script', async (event, command) => {
+    try {
+        const { stdout } = await execPromise(command);
+        return { success: true, output: stdout };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+const runStartupScripts = () => {
+    const scripts = store.get('startupScripts', '');
+    if (scripts) {
+        scripts.split('\n').forEach(line => {
+            const cmd = line.trim();
+            if (cmd) exec(cmd).unref();
+        });
+    }
+};
+
+app.whenReady().then(async () => {
+    if (process.platform === 'darwin' && store.get('biometricLock', false)) {
+        const { systemPreferences } = require('electron');
+        if (systemPreferences.canPromptTouchID()) {
+            try {
+                await systemPreferences.promptTouchID('Unlock Home Assistant Desktop');
+            } catch (e) {
+                app.quit();
+                return;
+            }
+        }
+    }
     createMainWindow();
+    runStartupScripts();
 
     // Usage of startup settings
     if (store.get('globalShortcut', false)) {
@@ -298,22 +391,44 @@ ipcMain.handle('get-settings', () => {
         autoLaunch: store.get('autoLaunch', false),
         globalShortcut: store.get('globalShortcut', false),
         autoUpdates: store.get('autoUpdates', true),
+        mediaPlayerEntity: store.get('mediaPlayerEntity', 'media_player.all'),
+        customCSS: store.get('customCSS', ''),
+        biometricLock: store.get('biometricLock', false),
+        startupScripts: store.get('startupScripts', ''),
+        haUrl: store.get('haUrl' || ''),
+        remoteUrl: store.get('remoteUrl' || ''),
+        useRemote: store.get('useRemote', false),
         apiToken: store.get('apiToken', ''),
         appVersion: app.getVersion() // Send current version
     };
 });
 
 ipcMain.handle('save-settings', (event, settings) => {
+    store.set('haUrl', settings.haUrl);
+    store.set('remoteUrl', settings.remoteUrl);
+    store.set('useRemote', settings.useRemote);
     store.set('autoLaunch', settings.autoLaunch);
     store.set('globalShortcut', settings.globalShortcut);
     store.set('autoUpdates', settings.autoUpdates);
+    store.set('mediaPlayerEntity', settings.mediaPlayerEntity);
+    store.set('customCSS', settings.customCSS);
+    store.set('biometricLock', settings.biometricLock);
+    store.set('startupScripts', settings.startupScripts);
     store.set('apiToken', settings.apiToken);
+    store.set('reportMedia', settings.reportMedia);
+    store.set('reportDnd', settings.reportDnd);
 
-    // 1. Auto Launch
-    app.setLoginItemSettings({
-        openAtLogin: settings.autoLaunch,
-        path: app.getPath('exe')
-    });
+    // 1. Auto Launch - Only attempt if packaged to avoid macOS Dev permission errors
+    if (app.isPackaged) {
+        try {
+            app.setLoginItemSettings({
+                openAtLogin: settings.autoLaunch,
+                path: app.getPath('exe')
+            });
+        } catch (e) {
+            console.warn('Could not set login item settings:', e.message);
+        }
+    }
 
     // 2. Global Shortcut
     globalShortcut.unregisterAll();
@@ -332,60 +447,62 @@ ipcMain.handle('save-settings', (event, settings) => {
     return true;
 });
 
-const { machineIdSync } = require('node-machine-id');
-const { exec } = require('child_process');
+// Picture-in-Picture Window
+let pipWindow = null;
+ipcMain.on('toggle-pip', () => {
+    if (pipWindow) {
+        pipWindow.close();
+        pipWindow = null;
+        return;
+    }
+
+    pipWindow = new BrowserWindow({
+        width: 320,
+        height: 180,
+        frame: false,
+        alwaysOnTop: true,
+        webPreferences: {
+            partition: 'persist:homeassistant'
+        }
+    });
+
+    pipWindow.loadURL(view.webContents.getURL());
+    pipWindow.on('closed', () => { pipWindow = null; });
+});
+
 
 function getBatteryInfo() {
     return new Promise((resolve) => {
         if (process.platform === 'darwin') {
             exec('pmset -g batt', (error, stdout) => {
-                if (error || !stdout) {
-                    resolve(null);
-                    return;
-                }
-
-                const percentMatch = stdout.match(/(\d+)%/);
-                const statusMatch = stdout.match(/;\s([^;]+);/);
-
-                if (percentMatch) {
+                if (error || !stdout) return resolve(null);
+                const match = stdout.match(/(\d+)%;\s(.*?);\s(?:(\d+:\d+)\sremaining|(\(no estimate\)))/);
+                if (match) {
                     resolve({
-                        percent: parseInt(percentMatch[1]),
-                        status: statusMatch ? statusMatch[1].trim() : 'Unknown'
+                        percent: parseInt(match[1]),
+                        status: match[2],
+                        timeRemaining: match[3] || 'Calculating'
                     });
                 } else {
-                    resolve(null);
+                    // Simple fallback if regex fails
+                    const percentMatch = stdout.match(/(\d+)%/);
+                    resolve(percentMatch ? { percent: parseInt(percentMatch[1]), status: 'unknown', timeRemaining: 'N/A' } : null);
                 }
             });
         } else if (process.platform === 'win32') {
-            // Use PowerShell for Windows
-            exec('powershell -Command "Get-CimInstance -ClassName Win32_Battery | Select-Object EstimatedChargeRemaining, BatteryStatus | ConvertTo-Json"', (error, stdout) => {
-                if (error || !stdout) {
-                    resolve(null);
-                    return;
-                }
-
-                try {
-                    const data = JSON.parse(stdout);
-                    // data could be an array if multiple batteries exist
-                    const battery = Array.isArray(data) ? data[0] : data;
-
-                    if (battery && battery.EstimatedChargeRemaining !== undefined) {
-                        let status = 'Unknown';
-                        // BatteryStatus codes: 1=Other, 2=Unknown, 3=Fully Charged, 4=Low, 5=Critical, 6=Charging, 7=Charging and High, 8=Charging and Low, 9=Charging and Critical, 10=Undefined, 11=Partially Charged
-                        if (battery.BatteryStatus === 3) status = 'full';
-                        else if ([6, 7, 8, 9].includes(battery.BatteryStatus)) status = 'charging';
-                        else if (battery.BatteryStatus === 2 || battery.BatteryStatus === 1) status = 'discharging';
-
-                        resolve({
-                            percent: battery.EstimatedChargeRemaining,
-                            status: status
-                        });
-                    } else {
-                        resolve(null);
-                    }
-                } catch (e) {
-                    resolve(null);
-                }
+            const script = 'powershell -command "Get-WmiObject -Class Win32_Battery | Select-Object -First 1 | ForEach-Object { \\"$($_.EstimatedChargeRemaining),$($_.BatteryStatus),$($_.EstimatedRunTime)\\" }"';
+            exec(script, (error, stdout) => {
+                if (error || !stdout) return resolve(null);
+                const parts = stdout.trim().split(',');
+                if (parts.length < 2) return resolve(null);
+                const percent = parseInt(parts[0]);
+                const statusCode = parts[1];
+                const time = parts[2];
+                resolve({
+                    percent: percent,
+                    status: statusCode === '2' ? 'charging' : (statusCode === '1' ? 'discharging' : 'unknown'),
+                    timeRemaining: (time && time !== '715827882') ? `${Math.floor(time/60)}:${time%60}` : 'Calculating'
+                });
             });
         } else if (process.platform === 'linux') {
             try {
@@ -396,7 +513,8 @@ function getBatteryInfo() {
                     const status = fs.readFileSync(`/sys/class/power_supply/${batteryDevice}/status`, 'utf8').trim().toLowerCase();
                     resolve({
                         percent: parseInt(capacity),
-                        status: status
+                        status: status,
+                        timeRemaining: 'Calculating'
                     });
                 } else {
                     resolve(null);
@@ -410,14 +528,88 @@ function getBatteryInfo() {
     });
 }
 
+function getActiveApp() {
+    return new Promise((resolve) => {
+        if (process.platform === 'darwin') {
+            const script = 'tell application "System Events" to get name of first process whose frontmost is true';
+            exec(`osascript -e '${script}'`, (error, stdout) => {
+                resolve(error ? 'Unknown' : stdout.trim());
+            });
+        } else if (process.platform === 'win32') {
+            const script = 'powershell -command "(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object -Property LastAccessTime -Descending | Select-Object -First 1).ProcessName"';
+            exec(script, (error, stdout) => {
+                resolve(error ? 'Unknown' : stdout.trim());
+            });
+        } else {
+            resolve('Linux Desktop');
+        }
+    });
+}
+
+function getMicCameraStatus() {
+    return new Promise((resolve) => {
+        if (process.platform === 'darwin') {
+            // Check if any process is using CMCapture (Camera)
+            exec("log show --last 1m --predicate 'subsystem == \"com.apple.CMCapture\" AND eventMessage CONTAINS \"Post-Deployment\"'", (error, stdout) => {
+                const camUsed = !error && stdout.includes('camera');
+                resolve({ mic: false, cam: camUsed }); // Mic is harder on Mac without specialized tools
+            });
+        } else if (process.platform === 'win32') {
+            const script = `powershell -Command "
+                $reg = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\webcam';
+                $cam = (Get-ItemProperty $reg -ErrorAction SilentlyContinue).LastUsedTimeStop -eq 0;
+                $regMic = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone';
+                $mic = (Get-ItemProperty $regMic -ErrorAction SilentlyContinue).LastUsedTimeStop -eq 0;
+                Write-Output \\"$cam,$mic\\" "`;
+            exec(script, (error, stdout) => {
+                if (error || !stdout) return resolve({ mic: false, cam: false });
+                const [cam, mic] = stdout.trim().split(',').map(v => v === 'True');
+                resolve({ mic, cam });
+            });
+        } else {
+            resolve({ mic: false, cam: false });
+        }
+    });
+}
+
+function getDNDStatus() {
+    return new Promise((resolve) => {
+        if (process.platform === 'darwin') {
+            exec('defaults read com.apple.controlcenter FocusModes', (error, stdout) => {
+                resolve(!error && stdout.includes('1')); 
+            });
+        } else if (process.platform === 'win32') {
+            exec('powershell -Command "(Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings).NOC_GLOBAL_SETTING_TOASTS_ENABLED"', (error, stdout) => {
+                resolve(stdout.trim() === '0');
+            });
+        } else {
+            resolve(false);
+        }
+    });
+}
+
+function getEffectiveUrl() {
+    const haUrl = store.get('haUrl');
+    const remoteUrl = store.get('remoteUrl');
+    const useRemote = store.get('useRemote', false);
+    return (useRemote && remoteUrl) ? remoteUrl : haUrl;
+}
+
+function handleDeepLink(url) {
+    if (!view) return;
+    const path = url.replace('ha-desktop://', '');
+    const haUrl = getEffectiveUrl();
+    view.webContents.loadURL(`${haUrl}/${path}`);
+}
+
 let sensorInterval;
 function startSensorReporting() {
     if (sensorInterval) clearInterval(sensorInterval);
 
-    const token = store.get('apiToken');
-    const haUrl = store.get('haUrl');
+    const haUrl = getEffectiveUrl();
+    const apiToken = store.get('apiToken');
 
-    if (!token || !haUrl) return;
+    if (!haUrl || !apiToken) return;
 
     let uniqueId = 'unknown_pc';
     try {
@@ -453,9 +645,12 @@ function startSensorReporting() {
         const usedMem = totalMem - freeMem;
         const memPercent = Math.round((usedMem / totalMem) * 100);
 
+        const idleState = powerMonitor.getSystemIdleState(300);
+        const activeApp = await getActiveApp();
+
         const safeHostname = os.hostname().toLowerCase().replace(/[^a-z0-9_]/g, '_');
 
-        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_memory_usage`, {
+        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_memory_usage`, {
             state: memPercent,
             attributes: {
                 friendly_name: `${os.hostname()} Memory Usage`,
@@ -467,7 +662,7 @@ function startSensorReporting() {
             }
         });
 
-        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_cpu_usage`, {
+        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_cpu_usage`, {
             state: cpuPercent,
             attributes: {
                 friendly_name: `${os.hostname()} CPU Usage`,
@@ -477,7 +672,7 @@ function startSensorReporting() {
             }
         });
 
-        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_status`, {
+        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_status`, {
             state: 'Active',
             attributes: {
                 friendly_name: `${os.hostname()} Status`,
@@ -485,13 +680,31 @@ function startSensorReporting() {
                 platform: os.platform(),
                 arch: os.arch(),
                 uptime_hours: (os.uptime() / 3600).toFixed(2),
+                is_idle: powerMonitor.getSystemIdleState(300) === 'idle',
+                active_app: await getActiveApp(),
+                dnd_mode: store.get('reportDnd', true) ? await getDNDStatus() : false,
                 icon: 'mdi:desktop-tower',
                 unique_id: `${uniqueId}_status`
             }
         });
 
+        // Mic/Cam Sensor
+        if (store.get('reportMedia', true)) {
+            const mediaStatus = await getMicCameraStatus();
+            reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_media_status`, {
+                state: mediaStatus.cam || mediaStatus.mic ? 'In Use' : 'Idle',
+                attributes: {
+                    friendly_name: `${os.hostname()} Media Activity`,
+                    camera_active: mediaStatus.cam,
+                    microphone_active: mediaStatus.mic,
+                    icon: mediaStatus.cam ? 'mdi:camera' : (mediaStatus.mic ? 'mdi:microphone' : 'mdi:camera-off'),
+                    unique_id: `${uniqueId}_media`
+                }
+            });
+        }
+
         // Uptime sensor (standalone)
-        reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_uptime`, {
+        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_uptime`, {
             state: (os.uptime() / 3600).toFixed(2),
             attributes: {
                 friendly_name: `${os.hostname()} Uptime`,
@@ -504,7 +717,7 @@ function startSensorReporting() {
         // Battery sensor (macOS only for now)
         const batteryInfo = await getBatteryInfo();
         if (batteryInfo) {
-            reportSensor(haUrl, token, `sensor.${safeHostname}_desktop_battery`, {
+            reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_battery`, {
                 state: batteryInfo.percent,
                 attributes: {
                     friendly_name: `${os.hostname()} Battery`,
@@ -556,8 +769,8 @@ app.on('window-all-closed', function () {
 
 function createPreferencesWindow() {
     const prefWindow = new BrowserWindow({
-        width: 400,
-        height: 520,
+        width: 650,
+        height: 580,
         parent: mainWindow,
         modal: false,
         autoHideMenuBar: true,

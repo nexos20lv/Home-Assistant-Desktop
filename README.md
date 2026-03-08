@@ -15,35 +15,48 @@
 *Click on a feature to deep dive into the technical details.*
 
 <details>
-<summary><b>🚀 Performance & Zero-Latency</b></summary>
+<summary><b>🚀 Performance & Smart Connectivity</b></summary>
 <br>
-Built on a custom Electron 40+ engine, the app uses <b>BrowserViews</b> instead of iframes to ensure the UI remains responsive even when loading heavy dashboards.
+Built on a custom Electron engine, the app ensures your dashboard is always accessible and responsive.
 <ul>
-  <li><b>Single-Instance Lock</b>: Prevents resource drain from accidental double-launches.</li>
-  <li><b>Partitioned Storage</b>: Keeps your HA session isolated and lightning-fast.</li>
+  <li><b>Smart Connect</b>: Automatically fails over between your <b>Local URL</b> (high-speed Wi-Fi) and <b>Remote URL</b> (Nabu Casa/VPN) when you leave home.</li>
+  <li><b>Deep Linking</b>: Open specific dashboards via <code>ha-desktop://dashboard/name</code> from other apps or shortcuts.</li>
+  <li><b>Picture-in-Picture (PiP)</b>: Pop camera feeds or dashboards into a floating, always-on-top window.</li>
 </ul>
 </details>
 
 <details>
-<summary><b>🛰️ Real-Time Hardware Telemetry</b></summary>
+<summary><b>🛰️ Pro-Grade OS Telemetry</b></summary>
 <br>
-The app doesn't just display your dashboard; it turns your PC into a Home Assistant device.
+The app turns your desktop into a rich Home Assistant device with industry-leading OS awareness.
 <ul>
-  <li><b>CPU usage</b>: <code>sensor.[hostname]_desktop_cpu_usage</code></li>
-  <li><b>RAM usage</b>: <code>sensor.[hostname]_desktop_memory_usage</code></li>
-  <li><b>Battery</b>: Reports charging status and level via native platform APIs (pmset/PowerShell).</li>
-  <li><b>Unique ID</b>: Uses <code>node-machine-id</code> for stable hardware tracking.</li>
+  <li><b>Mic & Camera Detection</b>: Report when your hardware is in use (perfect for "In a Meeting" automations).</li>
+  <li><b>Do Not Disturb Sync</b>: Synchronize your OS Focus Mode/DND state with Home Assistant.</li>
+  <li><b>Active App Tracking</b>: Reports which application is currently in focus (Productivity sensor).</li>
+  <li><b>Advanced Battery</b>: Real-time reporting of percentage, charging status, and <b>estimated time remaining</b>.</li>
 </ul>
 </details>
 
 <details>
-<summary><b>🛡️ Security & OS Integration</b></summary>
+<summary><b>🛡️ Native Integration & Security</b></summary>
 <br>
-Deeply integrated features for a native feel.
+Deeply integrated features that feel like a core part of your OS.
 <ul>
-  <li><b>Native Title Bar</b>: Uses <code>titleBarStyle: 'hidden'</code> with custom overlays for a seamless look.</li>
-  <li><b>System Tray</b>: Background monitoring and quick-toggle shortcuts.</li>
-  <li><b>Auto-Update</b>: Seamlessly powered by Squirrel (Win) and built-in update engine.</li>
+  <li><b>Biometric Lock (macOS/Win)</b>: Secure your dashboard with TouchID or Windows Hello.</li>
+  <li><b>Dark Mode Sync</b>: Auto-switches HA themes to match your OS light/dark settings.</li>
+  <li><b>Media Keys</b>: Control HA media players using your keyboard's physical media buttons.</li>
+  <li><b>System Tray</b>: Seamless background operation and quick settings access.</li>
+</ul>
+</details>
+
+<details>
+<summary><b>🛠️ Power User Tools</b></summary>
+<br>
+Customize the desktop experience to your exact needs.
+<ul>
+  <li><b>Custom CSS Injection</b>: Inject your own styles to hide headers or tweak the HA look.</li>
+  <li><b>Startup Scripts</b>: Run local terminal commands automatically when the app launches.</li>
+  <li><b>Auto-Update</b>: Configurable background updates to keep you on the latest version.</li>
 </ul>
 </details>
 
