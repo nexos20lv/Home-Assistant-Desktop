@@ -14,6 +14,7 @@
             <img src="../assets/logo.svg" alt="HA" />
         </div>
         <div class="app-title">Home Assistant Desktop</div>
+        <div id="network-pill" class="network-pill offline">Offline</div>
         <div class="window-controls">
             <!-- Mac/Windows specific controls if we were fully custom, but we use titleBarOverlay for buttons -->
         </div>
@@ -58,6 +59,19 @@
                 window.electronAPI.openPreferences();
             }
         });
+
+        const networkPill = document.getElementById('network-pill');
+        if (window.electronAPI && window.electronAPI.onNetworkStatus) {
+            window.electronAPI.onNetworkStatus((status) => {
+                const target = (status && status.target) || 'offline';
+                networkPill.classList.remove('local', 'remote', 'offline');
+                networkPill.classList.add(target);
+
+                if (target === 'local') networkPill.textContent = 'Local';
+                else if (target === 'remote') networkPill.textContent = 'Remote';
+                else networkPill.textContent = 'Offline';
+            });
+        }
     </script>
 </body>
 

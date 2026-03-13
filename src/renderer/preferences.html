@@ -139,7 +139,7 @@
         .setting-info p { font-size: 12px; margin: 0; color: var(--text-secondary); line-height: 1.5; }
 
         /* Inputs & Textareas */
-        input[type="text"], input[type="password"], textarea {
+        input[type="text"], input[type="password"], textarea, select {
             background: var(--input-bg);
             border: 1px solid var(--border-glass);
             border-radius: 10px;
@@ -153,7 +153,7 @@
             font-family: inherit;
         }
 
-        input:focus, textarea:focus {
+        input:focus, textarea:focus, select:focus {
             border-color: var(--accent);
             background: rgba(255, 255, 255, 0.05);
             box-shadow: 0 0 0 3px var(--accent-glow);
@@ -252,6 +252,19 @@
         }
         .add-btn:hover { background: rgba(56, 189, 248, 0.1); border-color: var(--accent); }
 
+        .log-box {
+            background: rgba(0, 0, 0, 0.22);
+            border: 1px solid var(--border-glass);
+            border-radius: 10px;
+            padding: 10px;
+            height: 120px;
+            overflow: auto;
+            font-family: monospace;
+            font-size: 11px;
+            color: #d1d5db;
+            white-space: pre-wrap;
+        }
+
         #toast {
             position: fixed; top: 22px; right: 22px;
             background: #10b981; color: #fff; padding: 12px 24px;
@@ -315,6 +328,17 @@
                       </div>
                       <label class="switch">
                           <input type="checkbox" id="use-remote">
+                          <span class="slider"></span>
+                      </label>
+                  </div>
+
+                  <div class="setting-row">
+                      <div class="setting-info">
+                          <h3>Smart Connect v2</h3>
+                          <p>Auto-switch between local and remote using health checks.</p>
+                      </div>
+                      <label class="switch">
+                          <input type="checkbox" id="smart-connect-enabled">
                           <span class="slider"></span>
                       </label>
                   </div>
@@ -408,11 +432,67 @@
 
                 <div class="setting-row">
                     <div class="setting-info">
+                        <h3>Microphone Sensor</h3>
+                        <p>Enable microphone activity in media telemetry.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="report-mic">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Camera Sensor</h3>
+                        <p>Enable camera activity in media telemetry.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="report-camera">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Active App Sensor</h3>
+                        <p>Send currently focused app name to Home Assistant.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="report-active-app">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
                         <h3>DND / Focus Sync</h3>
                         <p>Sync "Do Not Disturb" state with Home Assistant.</p>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="report-dnd">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row vertical">
+                    <div class="setting-info">
+                        <h3>Sensor Report Frequency</h3>
+                        <p>Choose base interval used for sensor updates.</p>
+                    </div>
+                    <select id="sensor-interval-minutes">
+                        <option value="1">Every 1 minute</option>
+                        <option value="5">Every 5 minutes</option>
+                        <option value="15">Every 15 minutes</option>
+                    </select>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Power Saver Mode</h3>
+                        <p>Reduce sensor frequency on battery and prolonged idle.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="power-saver-mode">
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -439,6 +519,26 @@
                     </div>
                     <textarea id="custom-css" style="height: 125px; font-family: monospace;" placeholder=".sidebar { background: transparent; }"></textarea>
                 </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Startup Scripts Safe Mode</h3>
+                        <p>Ask confirmation and block unsafe startup commands.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="startup-scripts-safe-mode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row vertical">
+                    <div class="setting-info">
+                        <h3>Error Log</h3>
+                        <p>Recent runtime logs for troubleshooting network/sensor issues.</p>
+                    </div>
+                    <div id="error-log" class="log-box">Loading logs...</div>
+                    <button class="secondary-btn" id="export-logs-btn" style="align-self: flex-end;">Export Logs</button>
+                </div>
             </div>
 
             <div class="footer-group">
@@ -462,6 +562,7 @@
                 document.getElementById('ha-url').value = settings.haUrl || '';
                 document.getElementById('remote-url').value = settings.remoteUrl || '';
                 document.getElementById('use-remote').checked = settings.useRemote || false;
+                document.getElementById('smart-connect-enabled').checked = settings.smartConnectEnabled !== false;
                 document.getElementById('auto-launch').checked = settings.autoLaunch;
                 document.getElementById('global-shortcut').checked = settings.globalShortcut;
                 document.getElementById('auto-updates').checked = settings.autoUpdates !== false;
@@ -472,7 +573,19 @@
                 document.getElementById('api-token').value = settings.apiToken || '';
                 document.getElementById('report-media').checked = settings.reportMedia !== false;
                 document.getElementById('report-dnd').checked = settings.reportDnd !== false;
+                document.getElementById('report-mic').checked = settings.reportMic !== false;
+                document.getElementById('report-camera').checked = settings.reportCamera !== false;
+                document.getElementById('report-active-app').checked = settings.reportActiveApp !== false;
+                document.getElementById('sensor-interval-minutes').value = String(settings.sensorIntervalMinutes || 1);
+                document.getElementById('power-saver-mode').checked = !!settings.powerSaverMode;
+                document.getElementById('startup-scripts-safe-mode').checked = settings.startupScriptsSafeMode !== false;
                 document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
+
+                const logs = await window.prefsAPI.getErrorLogs();
+                const logText = logs.length
+                    ? logs.slice(0, 80).map((entry) => `${entry.timestamp} [${entry.level}] ${entry.message}${entry.details ? ` | ${entry.details}` : ''}`).join('\n')
+                    : 'No errors logged yet.';
+                document.getElementById('error-log').innerText = logText;
             } catch (err) {
                 console.error("Init Error:", err);
             }
@@ -483,6 +596,7 @@
                 haUrl: document.getElementById('ha-url').value,
                 remoteUrl: document.getElementById('remote-url').value,
                 useRemote: document.getElementById('use-remote').checked,
+                smartConnectEnabled: document.getElementById('smart-connect-enabled').checked,
                 autoLaunch: document.getElementById('auto-launch').checked,
                 globalShortcut: document.getElementById('global-shortcut').checked,
                 autoUpdates: document.getElementById('auto-updates').checked,
@@ -492,7 +606,13 @@
                 customCSS: document.getElementById('custom-css').value,
                 apiToken: document.getElementById('api-token').value,
                 reportMedia: document.getElementById('report-media').checked,
-                reportDnd: document.getElementById('report-dnd').checked
+                reportDnd: document.getElementById('report-dnd').checked,
+                reportMic: document.getElementById('report-mic').checked,
+                reportCamera: document.getElementById('report-camera').checked,
+                reportActiveApp: document.getElementById('report-active-app').checked,
+                sensorIntervalMinutes: Number(document.getElementById('sensor-interval-minutes').value),
+                powerSaverMode: document.getElementById('power-saver-mode').checked,
+                startupScriptsSafeMode: document.getElementById('startup-scripts-safe-mode').checked
             };
 
             await window.prefsAPI.saveSettings(settings);
@@ -507,6 +627,10 @@
         });
 
         document.getElementById('close-btn').addEventListener('click', () => window.close());
+
+        document.getElementById('export-logs-btn').addEventListener('click', async () => {
+            await window.prefsAPI.exportErrorLogs();
+        });
         
         init();
     </script>

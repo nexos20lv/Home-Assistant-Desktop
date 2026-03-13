@@ -1,20 +1,49 @@
-const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, nativeTheme, powerMonitor } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, nativeTheme, powerMonitor, dialog } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const fs = require('fs');
 const os = require('os');
-const https = require('http'); // Using http for local IP, could be https if SSL needed
 const { exec } = require('child_process');
 const { machineIdSync } = require('node-machine-id');
 const util = require('util');
 const execPromise = util.promisify(exec);
+let keytar;
+
+try {
+    keytar = require('keytar');
+} catch (_error) {
+    keytar = null;
+}
 
 const store = new Store();
+const TOKEN_SERVICE = 'home-assistant-desktop';
+const TOKEN_ACCOUNT = 'ha-api-token';
+
+const smartConnectState = {
+    healthIntervalMs: 20000,
+    cooldownMs: 120000,
+    lastSwitchAt: 0,
+    currentTarget: 'unknown',
+    timer: null
+};
+
+const sensorDeliveryState = {
+    queue: [],
+    processing: false,
+    replayTimer: null,
+    lastErrorAt: 0,
+    maxQueueSize: 1000
+};
+
+const appLogBuffer = [];
+const APP_LOG_LIMIT = 300;
 
 let mainWindow;
 let view;
 let tray;
 let isQuiting = false;
+let sensorTickTimer;
+let lastSensorReportAt = 0;
 // Handle Squirrel Startup (to avoid multiple instances)
 if (require('electron-squirrel-startup')) {
     app.quit();
@@ -62,8 +91,303 @@ if (store.get('autoUpdates', true)) {
     });
 }
 
+function addAppLog(level, message, details = null) {
+    const entry = {
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+        details
+    };
+    appLogBuffer.push(entry);
+    if (appLogBuffer.length > APP_LOG_LIMIT) {
+        appLogBuffer.splice(0, appLogBuffer.length - APP_LOG_LIMIT);
+    }
+}
+
+async function getApiToken() {
+    if (keytar) {
+        try {
+            return await keytar.getPassword(TOKEN_SERVICE, TOKEN_ACCOUNT);
+        } catch (error) {
+            addAppLog('error', 'Failed reading token from keychain', error.message);
+        }
+    }
+    return store.get('apiToken', '');
+}
+
+async function setApiToken(token) {
+    if (keytar) {
+        try {
+            if (token) {
+                await keytar.setPassword(TOKEN_SERVICE, TOKEN_ACCOUNT, token);
+            } else {
+                await keytar.deletePassword(TOKEN_SERVICE, TOKEN_ACCOUNT);
+            }
+            store.delete('apiToken');
+            return;
+        } catch (error) {
+            addAppLog('error', 'Failed writing token to keychain, fallback to store', error.message);
+        }
+    }
+    store.set('apiToken', token || '');
+}
+
+function normalizeUrl(rawUrl) {
+    const value = (rawUrl || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value)) return value;
+    return `http://${value}`;
+}
+
+function timeoutPromise(ms) {
+    return new Promise((resolve) => {
+        setTimeout(() => resolve({ ok: false, timeout: true }), ms);
+    });
+}
+
+function healthCheckRequest(url, token) {
+    const { net } = require('electron');
+
+    return new Promise((resolve) => {
+        try {
+            const request = net.request({
+                method: 'GET',
+                url: `${url}/api/`
+            });
+
+            if (token) {
+                request.setHeader('Authorization', `Bearer ${token}`);
+            }
+
+            request.on('response', (response) => {
+                const code = response.statusCode || 0;
+                const authRequired = code === 401 || code === 403;
+                const ok = code >= 200 && code < 500;
+                resolve({ ok, code, authRequired });
+            });
+
+            request.on('error', (error) => {
+                resolve({ ok: false, message: error.message });
+            });
+
+            request.end();
+        } catch (error) {
+            resolve({ ok: false, message: error.message });
+        }
+    });
+}
+
+async function testHaConnection(url, token = '') {
+    const normalized = normalizeUrl(url);
+    if (!normalized) {
+        return { ok: false, message: 'URL manquante.' };
+    }
+
+    try {
+        new URL(normalized);
+    } catch (_error) {
+        return { ok: false, message: 'URL invalide.' };
+    }
+
+    const result = await Promise.race([
+        healthCheckRequest(normalized, token),
+        timeoutPromise(7000)
+    ]);
+
+    if (result.timeout) {
+        return { ok: false, message: 'Timeout: instance non joignable.' };
+    }
+
+    if (!result.ok) {
+        if (result.message && /certificate|ssl|tls/i.test(result.message)) {
+            return { ok: false, message: 'Échec certificat SSL/TLS.' };
+        }
+        return { ok: false, message: `Connexion impossible (${result.message || 'network error'}).` };
+    }
+
+    return {
+        ok: true,
+        authRequired: !!result.authRequired,
+        code: result.code
+    };
+}
+
+function emitNetworkStatus() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('network-status', {
+        target: smartConnectState.currentTarget,
+        updatedAt: Date.now()
+    });
+}
+
+async function evaluateSmartConnect() {
+    const localUrl = normalizeUrl(store.get('haUrl', ''));
+    const remoteUrl = normalizeUrl(store.get('remoteUrl', ''));
+    const forceRemote = store.get('useRemote', false);
+    const smartConnectEnabled = store.get('smartConnectEnabled', true);
+    const token = await getApiToken();
+
+    let desired = 'offline';
+    let resolvedUrl = '';
+
+    if (forceRemote && remoteUrl) {
+        desired = 'remote';
+        resolvedUrl = remoteUrl;
+    } else if (!smartConnectEnabled) {
+        if (localUrl) {
+            desired = 'local';
+            resolvedUrl = localUrl;
+        }
+    } else {
+        const [localStatus, remoteStatus] = await Promise.all([
+            localUrl ? testHaConnection(localUrl, token) : Promise.resolve({ ok: false }),
+            remoteUrl ? testHaConnection(remoteUrl, token) : Promise.resolve({ ok: false })
+        ]);
+
+        if (localStatus.ok) {
+            desired = 'local';
+            resolvedUrl = localUrl;
+        } else if (remoteStatus.ok) {
+            desired = 'remote';
+            resolvedUrl = remoteUrl;
+        }
+    }
+
+    if (smartConnectState.currentTarget === 'unknown') {
+        smartConnectState.currentTarget = desired;
+        emitNetworkStatus();
+    }
+
+    const isSwitch = desired !== smartConnectState.currentTarget;
+    if (isSwitch) {
+        const cooldownElapsed = (Date.now() - smartConnectState.lastSwitchAt) >= smartConnectState.cooldownMs;
+        if (!cooldownElapsed && smartConnectState.currentTarget !== 'unknown') {
+            emitNetworkStatus();
+            return;
+        }
+
+        smartConnectState.currentTarget = desired;
+        smartConnectState.lastSwitchAt = Date.now();
+        emitNetworkStatus();
+        addAppLog('info', `SmartConnect switched to ${desired}`);
+
+        if (view && resolvedUrl) {
+            try {
+                const currentUrl = view.webContents.getURL() || '';
+                if (!currentUrl.startsWith(resolvedUrl)) {
+                    view.webContents.loadURL(resolvedUrl);
+                }
+            } catch (_error) {
+                // BrowserView might not be ready yet.
+            }
+        }
+    } else {
+        emitNetworkStatus();
+    }
+}
+
+function startSmartConnectMonitor() {
+    if (smartConnectState.timer) clearInterval(smartConnectState.timer);
+    smartConnectState.timer = setInterval(() => {
+        evaluateSmartConnect().catch((error) => {
+            addAppLog('error', 'SmartConnect monitor failure', error.message);
+        });
+    }, smartConnectState.healthIntervalMs);
+
+    evaluateSmartConnect().catch((error) => {
+        addAppLog('error', 'Initial SmartConnect evaluation failure', error.message);
+    });
+}
+
+function getCurrentBaseUrl() {
+    if (smartConnectState.currentTarget === 'remote') {
+        return normalizeUrl(store.get('remoteUrl', ''));
+    }
+    if (smartConnectState.currentTarget === 'local') {
+        return normalizeUrl(store.get('haUrl', ''));
+    }
+    return normalizeUrl(getEffectiveUrl() || '');
+}
+
+function scheduleSensorReplay() {
+    if (sensorDeliveryState.replayTimer) clearInterval(sensorDeliveryState.replayTimer);
+    sensorDeliveryState.replayTimer = setInterval(async () => {
+        if (!sensorDeliveryState.queue.length || sensorDeliveryState.processing) return;
+        await flushSensorQueue();
+    }, 10000);
+}
+
+function enqueueSensorReport(baseUrl, token, entityId, data, options = {}) {
+    const item = {
+        baseUrl,
+        token,
+        entityId,
+        data,
+        attempts: options.attempts || 0,
+        nextAttemptAt: options.nextAttemptAt || Date.now()
+    };
+
+    if (sensorDeliveryState.queue.length >= sensorDeliveryState.maxQueueSize) {
+        sensorDeliveryState.queue.shift();
+    }
+    sensorDeliveryState.queue.push(item);
+}
+
+async function flushSensorQueue() {
+    if (sensorDeliveryState.processing) return;
+    sensorDeliveryState.processing = true;
+
+    try {
+        const now = Date.now();
+        const pending = [...sensorDeliveryState.queue];
+        sensorDeliveryState.queue = [];
+
+        for (const item of pending) {
+            if (item.nextAttemptAt > now) {
+                sensorDeliveryState.queue.push(item);
+                continue;
+            }
+
+            const result = await postSensor(item.baseUrl, item.token, item.entityId, item.data);
+            if (!result.ok) {
+                const attempts = item.attempts + 1;
+                const backoffMs = Math.min(300000, Math.pow(2, attempts) * 5000);
+                sensorDeliveryState.queue.push({
+                    ...item,
+                    attempts,
+                    nextAttemptAt: Date.now() + backoffMs
+                });
+
+                if (Date.now() - sensorDeliveryState.lastErrorAt > 15000) {
+                    addAppLog('warn', 'Sensor delivery failed, queued for retry', result.message || result.code || 'unknown');
+                    sensorDeliveryState.lastErrorAt = Date.now();
+                }
+            }
+        }
+    } finally {
+        sensorDeliveryState.processing = false;
+    }
+}
+
+function isStartupScriptSafe(command) {
+    if (!command || command.length > 200) return false;
+
+    const blockedPatterns = [
+        /rm\s+-rf\s+\//i,
+        /mkfs/i,
+        /shutdown/i,
+        /reboot/i,
+        /:\(\)\s*\{/,
+        /\bdel\b\s+\/s/i,
+        /\bdd\b\s+if=/i
+    ];
+
+    if (/&&|\|\||;/g.test(command)) return false;
+    return !blockedPatterns.some((pattern) => pattern.test(command));
+}
+
 function createMainWindow() {
-    const haUrl = getEffectiveUrl();
+    const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
 
     if (!haUrl) {
         createSetupWindow();
@@ -101,15 +425,10 @@ function createMainWindow() {
 
     mainWindow.setBrowserView(view);
 
-    view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-        const haUrl = store.get('haUrl');
-        const remoteUrl = store.get('remoteUrl');
-        
-        // If we failed on the local URL and have a remote URL, try that
-        if (validatedURL.includes(haUrl) && remoteUrl && haUrl !== remoteUrl) {
-            console.log('Local URL failed, trying remote URL...');
-            view.webContents.loadURL(remoteUrl);
-        }
+    view.webContents.on('did-fail-load', (_event, _errorCode, errorDescription, _validatedURL) => {
+        addAppLog('warn', 'BrowserView failed to load page', errorDescription);
+        smartConnectState.currentTarget = 'offline';
+        emitNetworkStatus();
     });
 
     // Initial bounds setting
@@ -139,17 +458,28 @@ function createMainWindow() {
     });
 
     // Media Keys Integration
-    const sendMediaService = (service) => {
-        const haUrl = getEffectiveUrl();
-        const apiToken = store.get('apiToken');
+    const sendMediaService = async (service) => {
+        const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
+        const apiToken = await getApiToken();
         const entityId = store.get('mediaPlayerEntity', 'media_player.all'); // Fallback or user-defined
 
         if (!haUrl || !apiToken) return;
 
-        axios.post(`${haUrl}/api/services/media_player/${service}`, 
-            { entity_id: entityId },
-            { headers: { Authorization: `Bearer ${apiToken}` } }
-        ).catch(err => console.error(`Media Key Error (${service}):`, err.message));
+        const { net } = require('electron');
+        const request = net.request({
+            method: 'POST',
+            url: `${haUrl}/api/services/media_player/${service}`,
+            headers: {
+                'Authorization': `Bearer ${apiToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        request.on('error', (error) => {
+            addAppLog('warn', `Media key call failed (${service})`, error.message);
+        });
+        request.write(JSON.stringify({ entity_id: entityId }));
+        request.end();
     };
 
     globalShortcut.register('MediaPlayPause', () => sendMediaService('media_play_pause'));
@@ -171,17 +501,23 @@ function createMainWindow() {
 
     // Permission Handling (Notifications, Camera, Mic)
     const { session } = require('electron');
-    session.fromPartition('persist:homeassistant').setPermissionRequestHandler((webContents, permission, callback) => {
-        const allowedPermissions = ['notifications', 'media', 'audioCapture', 'videoCapture'];
-        if (allowedPermissions.includes(permission)) {
-            callback(true);
-        } else {
-            callback(false);
-        }
+    session.fromPartition('persist:homeassistant').setPermissionRequestHandler((_webContents, permission, callback) => {
+        const allowNotifications = true;
+        const allowMic = store.get('reportMic', true);
+        const allowCamera = store.get('reportCamera', true);
+
+        const permissionAllowed =
+            (permission === 'notifications' && allowNotifications) ||
+            (permission === 'audioCapture' && allowMic) ||
+            (permission === 'videoCapture' && allowCamera) ||
+            permission === 'media';
+
+        callback(permissionAllowed);
     });
 
     // Load HA URL into the view
     view.webContents.loadURL(haUrl);
+    emitNetworkStatus();
 
     // Handle Resize
     mainWindow.on('resize', updateViewBounds);
@@ -283,17 +619,54 @@ ipcMain.handle('run-script', async (event, command) => {
     }
 });
 
-const runStartupScripts = () => {
+const runStartupScripts = async () => {
     const scripts = store.get('startupScripts', '');
-    if (scripts) {
-        scripts.split('\n').forEach(line => {
-            const cmd = line.trim();
-            if (cmd) exec(cmd).unref();
+    if (!scripts) return;
+
+    const scriptLines = scripts
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 20);
+
+    if (!scriptLines.length) return;
+
+    const safeMode = store.get('startupScriptsSafeMode', true);
+    let approved = true;
+
+    if (safeMode) {
+        const response = await dialog.showMessageBox({
+            type: 'warning',
+            title: 'Startup scripts safe mode',
+            message: 'Startup scripts are about to run.',
+            detail: `Review before execution:\n\n${scriptLines.join('\n')}`,
+            buttons: ['Cancel', 'Run Scripts'],
+            defaultId: 0,
+            cancelId: 0
         });
+        approved = response.response === 1;
+    }
+
+    if (!approved) {
+        addAppLog('info', 'Startup scripts canceled by user');
+        return;
+    }
+
+    for (const cmd of scriptLines) {
+        if (safeMode && !isStartupScriptSafe(cmd)) {
+            addAppLog('warn', 'Blocked unsafe startup script', cmd);
+            continue;
+        }
+        exec(cmd).unref();
     }
 };
 
 app.whenReady().then(async () => {
+    const legacyToken = store.get('apiToken', '');
+    if (legacyToken) {
+        await setApiToken(legacyToken);
+    }
+
     if (process.platform === 'darwin' && store.get('biometricLock', false)) {
         const { systemPreferences } = require('electron');
         if (systemPreferences.canPromptTouchID()) {
@@ -305,7 +678,10 @@ app.whenReady().then(async () => {
             }
         }
     }
+
     createMainWindow();
+    startSmartConnectMonitor();
+    scheduleSensorReplay();
     runStartupScripts();
 
     // Usage of startup settings
@@ -386,7 +762,8 @@ app.whenReady().then(async () => {
     });
 });
 
-ipcMain.handle('get-settings', () => {
+ipcMain.handle('get-settings', async () => {
+    const apiToken = await getApiToken();
     return {
         autoLaunch: store.get('autoLaunch', false),
         globalShortcut: store.get('globalShortcut', false),
@@ -395,18 +772,28 @@ ipcMain.handle('get-settings', () => {
         customCSS: store.get('customCSS', ''),
         biometricLock: store.get('biometricLock', false),
         startupScripts: store.get('startupScripts', ''),
-        haUrl: store.get('haUrl' || ''),
-        remoteUrl: store.get('remoteUrl' || ''),
+        haUrl: store.get('haUrl', ''),
+        remoteUrl: store.get('remoteUrl', ''),
         useRemote: store.get('useRemote', false),
-        apiToken: store.get('apiToken', ''),
-        appVersion: app.getVersion() // Send current version
+        smartConnectEnabled: store.get('smartConnectEnabled', true),
+        apiToken,
+        reportMedia: store.get('reportMedia', true),
+        reportDnd: store.get('reportDnd', true),
+        reportMic: store.get('reportMic', true),
+        reportCamera: store.get('reportCamera', true),
+        reportActiveApp: store.get('reportActiveApp', true),
+        sensorIntervalMinutes: store.get('sensorIntervalMinutes', 1),
+        powerSaverMode: store.get('powerSaverMode', false),
+        startupScriptsSafeMode: store.get('startupScriptsSafeMode', true),
+        appVersion: app.getVersion()
     };
 });
 
-ipcMain.handle('save-settings', (event, settings) => {
-    store.set('haUrl', settings.haUrl);
-    store.set('remoteUrl', settings.remoteUrl);
+ipcMain.handle('save-settings', async (_event, settings) => {
+    store.set('haUrl', normalizeUrl(settings.haUrl));
+    store.set('remoteUrl', normalizeUrl(settings.remoteUrl));
     store.set('useRemote', settings.useRemote);
+    store.set('smartConnectEnabled', settings.smartConnectEnabled !== false);
     store.set('autoLaunch', settings.autoLaunch);
     store.set('globalShortcut', settings.globalShortcut);
     store.set('autoUpdates', settings.autoUpdates);
@@ -414,9 +801,15 @@ ipcMain.handle('save-settings', (event, settings) => {
     store.set('customCSS', settings.customCSS);
     store.set('biometricLock', settings.biometricLock);
     store.set('startupScripts', settings.startupScripts);
-    store.set('apiToken', settings.apiToken);
+    await setApiToken(settings.apiToken || '');
     store.set('reportMedia', settings.reportMedia);
     store.set('reportDnd', settings.reportDnd);
+    store.set('reportMic', settings.reportMic !== false);
+    store.set('reportCamera', settings.reportCamera !== false);
+    store.set('reportActiveApp', settings.reportActiveApp !== false);
+    store.set('sensorIntervalMinutes', Number(settings.sensorIntervalMinutes || 1));
+    store.set('powerSaverMode', !!settings.powerSaverMode);
+    store.set('startupScriptsSafeMode', settings.startupScriptsSafeMode !== false);
 
     // 1. Auto Launch - Only attempt if packaged to avoid macOS Dev permission errors
     if (app.isPackaged) {
@@ -442,6 +835,7 @@ ipcMain.handle('save-settings', (event, settings) => {
     }
 
     // 3. Sensors
+    await evaluateSmartConnect();
     startSensorReporting();
 
     return true;
@@ -598,24 +992,77 @@ function getEffectiveUrl() {
 function handleDeepLink(url) {
     if (!view) return;
     const path = url.replace('ha-desktop://', '');
-    const haUrl = getEffectiveUrl();
+    const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
     view.webContents.loadURL(`${haUrl}/${path}`);
 }
 
-let sensorInterval;
+function getSensorBaseIntervalMs() {
+    const selected = Number(store.get('sensorIntervalMinutes', 1));
+    if (selected === 5) return 5 * 60 * 1000;
+    if (selected === 15) return 15 * 60 * 1000;
+    return 60 * 1000;
+}
+
+async function getEffectiveSensorIntervalMs() {
+    let intervalMs = getSensorBaseIntervalMs();
+    const idleSeconds = powerMonitor.getSystemIdleTime();
+    const powerSaverMode = store.get('powerSaverMode', false);
+
+    if (idleSeconds >= 900) {
+        intervalMs = Math.max(intervalMs, 5 * 60 * 1000);
+    }
+
+    if (powerSaverMode) {
+        const battery = await getBatteryInfo();
+        if (battery && battery.status !== 'charging') {
+            intervalMs = Math.max(intervalMs, 15 * 60 * 1000);
+        }
+    }
+
+    return intervalMs;
+}
+
+async function postSensor(baseUrl, token, entityId, data) {
+    const { net } = require('electron');
+
+    return new Promise((resolve) => {
+        const request = net.request({
+            method: 'POST',
+            url: `${baseUrl}/api/states/${entityId}`,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        request.on('response', (response) => {
+            const code = response.statusCode || 0;
+            resolve({ ok: code >= 200 && code < 300, code });
+        });
+        request.on('error', (error) => {
+            resolve({ ok: false, message: error.message });
+        });
+
+        request.write(JSON.stringify(data));
+        request.end();
+    });
+}
+
+async function reportSensor(baseUrl, token, entityId, data) {
+    const result = await postSensor(baseUrl, token, entityId, data);
+    if (!result.ok) {
+        enqueueSensorReport(baseUrl, token, entityId, data);
+    }
+}
+
 function startSensorReporting() {
-    if (sensorInterval) clearInterval(sensorInterval);
-
-    const haUrl = getEffectiveUrl();
-    const apiToken = store.get('apiToken');
-
-    if (!haUrl || !apiToken) return;
+    if (sensorTickTimer) clearTimeout(sensorTickTimer);
 
     let uniqueId = 'unknown_pc';
     try {
         uniqueId = machineIdSync();
     } catch (error) {
-        console.error('Failed to get machine Id, generating random:', error);
+        addAppLog('warn', 'Failed to get machine id, using fallback', error.message);
         const uuidFallback = store.get('uuidFallback');
         if (uuidFallback) {
             uniqueId = uuidFallback;
@@ -627,110 +1074,134 @@ function startSensorReporting() {
 
     let previousCpuInfo = getCpuInfo();
 
-    const cpuInterval = setInterval(async () => {
-        const currentCpuInfo = getCpuInfo();
-        const idleDifference = currentCpuInfo.idle - previousCpuInfo.idle;
-        const totalDifference = currentCpuInfo.total - previousCpuInfo.total;
-
-        // Calculate CPU usage percentage
-        let cpuPercent = 0;
-        if (totalDifference > 0) {
-            cpuPercent = Math.round(100 - (100 * idleDifference / totalDifference));
-        }
-        previousCpuInfo = currentCpuInfo;
-
-        // Memory Usage
-        const totalMem = os.totalmem();
-        const freeMem = os.freemem();
-        const usedMem = totalMem - freeMem;
-        const memPercent = Math.round((usedMem / totalMem) * 100);
-
-        const idleState = powerMonitor.getSystemIdleState(300);
-        const activeApp = await getActiveApp();
-
-        const safeHostname = os.hostname().toLowerCase().replace(/[^a-z0-9_]/g, '_');
-
-        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_memory_usage`, {
-            state: memPercent,
-            attributes: {
-                friendly_name: `${os.hostname()} Memory Usage`,
-                unit_of_measurement: '%',
-                icon: 'mdi:memory',
-                total_memory_gb: (totalMem / (1024 ** 3)).toFixed(2),
-                free_memory_gb: (freeMem / (1024 ** 3)).toFixed(2),
-                unique_id: `${uniqueId}_memory`
+    const tick = async () => {
+        try {
+            const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
+            const apiToken = await getApiToken();
+            if (!haUrl || !apiToken) {
+                sensorTickTimer = setTimeout(tick, 30000);
+                return;
             }
-        });
 
-        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_cpu_usage`, {
-            state: cpuPercent,
-            attributes: {
-                friendly_name: `${os.hostname()} CPU Usage`,
-                unit_of_measurement: '%',
-                icon: 'mdi:cpu-64-bit',
-                unique_id: `${uniqueId}_cpu`
+            const effectiveInterval = await getEffectiveSensorIntervalMs();
+            const enoughTimeElapsed = (Date.now() - lastSensorReportAt) >= effectiveInterval;
+            if (!enoughTimeElapsed) {
+                sensorTickTimer = setTimeout(tick, 30000);
+                return;
             }
-        });
 
-        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_status`, {
-            state: 'Active',
-            attributes: {
-                friendly_name: `${os.hostname()} Status`,
-                hostname: os.hostname(),
-                platform: os.platform(),
-                arch: os.arch(),
-                uptime_hours: (os.uptime() / 3600).toFixed(2),
-                is_idle: powerMonitor.getSystemIdleState(300) === 'idle',
-                active_app: await getActiveApp(),
-                dnd_mode: store.get('reportDnd', true) ? await getDNDStatus() : false,
-                icon: 'mdi:desktop-tower',
-                unique_id: `${uniqueId}_status`
+            const currentCpuInfo = getCpuInfo();
+            const idleDifference = currentCpuInfo.idle - previousCpuInfo.idle;
+            const totalDifference = currentCpuInfo.total - previousCpuInfo.total;
+
+            let cpuPercent = 0;
+            if (totalDifference > 0) {
+                cpuPercent = Math.round(100 - (100 * idleDifference / totalDifference));
             }
-        });
+            previousCpuInfo = currentCpuInfo;
 
-        // Mic/Cam Sensor
-        if (store.get('reportMedia', true)) {
-            const mediaStatus = await getMicCameraStatus();
-            reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_media_status`, {
-                state: mediaStatus.cam || mediaStatus.mic ? 'In Use' : 'Idle',
+            const totalMem = os.totalmem();
+            const freeMem = os.freemem();
+            const usedMem = totalMem - freeMem;
+            const memPercent = Math.round((usedMem / totalMem) * 100);
+            const safeHostname = os.hostname().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+
+            const reportDnd = store.get('reportDnd', true);
+            const reportActiveApp = store.get('reportActiveApp', true);
+            const reportMedia = store.get('reportMedia', true);
+            const reportMic = store.get('reportMic', true);
+            const reportCamera = store.get('reportCamera', true);
+
+            const activeApp = reportActiveApp ? await getActiveApp() : 'hidden';
+
+            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_memory_usage`, {
+                state: memPercent,
                 attributes: {
-                    friendly_name: `${os.hostname()} Media Activity`,
-                    camera_active: mediaStatus.cam,
-                    microphone_active: mediaStatus.mic,
-                    icon: mediaStatus.cam ? 'mdi:camera' : (mediaStatus.mic ? 'mdi:microphone' : 'mdi:camera-off'),
-                    unique_id: `${uniqueId}_media`
-                }
-            });
-        }
-
-        // Uptime sensor (standalone)
-        reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_uptime`, {
-            state: (os.uptime() / 3600).toFixed(2),
-            attributes: {
-                friendly_name: `${os.hostname()} Uptime`,
-                unit_of_measurement: 'h',
-                icon: 'mdi:clock-outline',
-                unique_id: `${uniqueId}_uptime`
-            }
-        });
-
-        // Battery sensor (macOS only for now)
-        const batteryInfo = await getBatteryInfo();
-        if (batteryInfo) {
-            reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_battery`, {
-                state: batteryInfo.percent,
-                attributes: {
-                    friendly_name: `${os.hostname()} Battery`,
+                    friendly_name: `${os.hostname()} Memory Usage`,
                     unit_of_measurement: '%',
-                    icon: batteryInfo.status === 'charging' ? 'mdi:battery-charging' : 'mdi:battery',
-                    status: batteryInfo.status,
-                    unique_id: `${uniqueId}_battery`
+                    icon: 'mdi:memory',
+                    total_memory_gb: (totalMem / (1024 ** 3)).toFixed(2),
+                    free_memory_gb: (freeMem / (1024 ** 3)).toFixed(2),
+                    unique_id: `${uniqueId}_memory`
                 }
             });
-        }
-    }, 60000);
 
-    sensorInterval = cpuInterval;
+            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_cpu_usage`, {
+                state: cpuPercent,
+                attributes: {
+                    friendly_name: `${os.hostname()} CPU Usage`,
+                    unit_of_measurement: '%',
+                    icon: 'mdi:cpu-64-bit',
+                    unique_id: `${uniqueId}_cpu`
+                }
+            });
+
+            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_status`, {
+                state: 'Active',
+                attributes: {
+                    friendly_name: `${os.hostname()} Status`,
+                    hostname: os.hostname(),
+                    platform: os.platform(),
+                    arch: os.arch(),
+                    uptime_hours: (os.uptime() / 3600).toFixed(2),
+                    is_idle: powerMonitor.getSystemIdleState(300) === 'idle',
+                    active_app: activeApp,
+                    dnd_mode: reportDnd ? await getDNDStatus() : false,
+                    icon: 'mdi:desktop-tower',
+                    unique_id: `${uniqueId}_status`
+                }
+            });
+
+            if (reportMedia) {
+                const mediaStatus = await getMicCameraStatus();
+                const cameraActive = reportCamera ? mediaStatus.cam : false;
+                const micActive = reportMic ? mediaStatus.mic : false;
+                await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_media_status`, {
+                    state: cameraActive || micActive ? 'In Use' : 'Idle',
+                    attributes: {
+                        friendly_name: `${os.hostname()} Media Activity`,
+                        camera_active: cameraActive,
+                        microphone_active: micActive,
+                        icon: cameraActive ? 'mdi:camera' : (micActive ? 'mdi:microphone' : 'mdi:camera-off'),
+                        unique_id: `${uniqueId}_media`
+                    }
+                });
+            }
+
+            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_uptime`, {
+                state: (os.uptime() / 3600).toFixed(2),
+                attributes: {
+                    friendly_name: `${os.hostname()} Uptime`,
+                    unit_of_measurement: 'h',
+                    icon: 'mdi:clock-outline',
+                    unique_id: `${uniqueId}_uptime`
+                }
+            });
+
+            const batteryInfo = await getBatteryInfo();
+            if (batteryInfo) {
+                await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_battery`, {
+                    state: batteryInfo.percent,
+                    attributes: {
+                        friendly_name: `${os.hostname()} Battery`,
+                        unit_of_measurement: '%',
+                        icon: batteryInfo.status === 'charging' ? 'mdi:battery-charging' : 'mdi:battery',
+                        status: batteryInfo.status,
+                        unique_id: `${uniqueId}_battery`
+                    }
+                });
+            }
+
+            await flushSensorQueue();
+            lastSensorReportAt = Date.now();
+        } catch (error) {
+            addAppLog('error', 'Sensor reporting tick failed', error.message);
+        } finally {
+            sensorTickTimer = setTimeout(tick, 30000);
+        }
+    };
+
+    tick();
 }
 
 function getCpuInfo() {
@@ -767,6 +1238,13 @@ app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') app.quit();
 });
 
+app.on('will-quit', () => {
+    if (smartConnectState.timer) clearInterval(smartConnectState.timer);
+    if (sensorDeliveryState.replayTimer) clearInterval(sensorDeliveryState.replayTimer);
+    if (sensorTickTimer) clearTimeout(sensorTickTimer);
+    globalShortcut.unregisterAll();
+});
+
 function createPreferencesWindow() {
     const prefWindow = new BrowserWindow({
         width: 650,
@@ -799,6 +1277,30 @@ ipcMain.handle('save-config', (event, url) => {
     return true;
 });
 
+ipcMain.handle('save-onboarding-config', async (_event, payload) => {
+    const localUrl = normalizeUrl(payload.localUrl || '');
+    const remoteUrl = normalizeUrl(payload.remoteUrl || '');
+    if (!localUrl) {
+        throw new Error('Local URL is required');
+    }
+
+    store.set('haUrl', localUrl);
+    store.set('remoteUrl', remoteUrl);
+    store.set('useRemote', false);
+    store.set('smartConnectEnabled', true);
+
+    if (payload.token) {
+        await setApiToken(payload.token);
+    }
+    addAppLog('info', 'Onboarding settings saved');
+    return true;
+});
+
+ipcMain.handle('test-ha-connection', async (_event, payload) => {
+    const token = (payload && payload.token) ? payload.token : '';
+    return testHaConnection(payload ? payload.url : '', token);
+});
+
 ipcMain.handle('reset-config', () => {
     store.delete('haUrl');
     app.relaunch();
@@ -809,6 +1311,29 @@ ipcMain.handle('reset-config', () => {
 
 ipcMain.on('open-preferences', () => {
     createPreferencesWindow();
+});
+
+ipcMain.handle('get-error-logs', () => {
+    return [...appLogBuffer].reverse();
+});
+
+ipcMain.handle('export-error-logs', async () => {
+    const result = await dialog.showSaveDialog({
+        title: 'Export logs',
+        defaultPath: `ha-desktop-logs-${Date.now()}.txt`,
+        filters: [{ name: 'Text', extensions: ['txt'] }]
+    });
+
+    if (result.canceled || !result.filePath) {
+        return { success: false, canceled: true };
+    }
+
+    const contents = appLogBuffer
+        .map((entry) => `${entry.timestamp} [${entry.level.toUpperCase()}] ${entry.message}${entry.details ? ` | ${entry.details}` : ''}`)
+        .join('\n');
+
+    fs.writeFileSync(result.filePath, contents, 'utf8');
+    return { success: true, filePath: result.filePath };
 });
 
 ipcMain.on('open-external', (event, url) => {

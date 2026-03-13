@@ -6,6 +6,8 @@
     --accent-color: #38bdf8;
     --accent-hover: #0ea5e9;
     --error-color: #ef4444;
+    --success-color: #22c55e;
+    --info-color: #f59e0b;
     --input-bg: rgba(15, 23, 42, 0.6);
 }
 
@@ -26,7 +28,7 @@ body {
 
 .container {
     width: 100%;
-    max-width: 400px;
+    max-width: 460px;
     padding: 20px;
     animation: fadeIn 0.8s ease-out;
     -webkit-app-region: no-drag;
@@ -36,7 +38,7 @@ body {
     background: var(--card-bg);
     backdrop-filter: blur(12px);
     border-radius: 20px;
-    padding: 40px 30px;
+    padding: 34px 30px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.05);
     text-align: center;
@@ -49,7 +51,7 @@ body {
 }
 
 h1 {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 600;
     margin: 0 0 10px 0;
     letter-spacing: -0.5px;
@@ -58,12 +60,71 @@ h1 {
 .subtitle {
     color: var(--text-secondary);
     font-size: 14px;
-    margin: 0 0 30px 0;
+    margin: 0 0 18px 0;
+}
+
+h2 {
+    margin: 0 0 8px 0;
+    font-size: 18px;
+    text-align: left;
+}
+
+.step-help {
+    margin: 0 0 14px 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-align: left;
+}
+
+.stepper {
+    display: flex;
+    align-items: center;
+    margin: 0 0 22px 0;
+}
+
+.step-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1px solid #475569;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.step-dot.active {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background: rgba(56, 189, 248, 0.12);
+}
+
+.step-dot.done {
+    border-color: var(--success-color);
+    color: #fff;
+    background: var(--success-color);
+}
+
+.step-line {
+    flex: 1;
+    height: 1px;
+    background: #334155;
+    margin: 0 8px;
+}
+
+.step-panel {
+    display: none;
+}
+
+.step-panel.active {
+    display: block;
 }
 
 .input-group {
     position: relative;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
     text-align: left;
 }
 
@@ -88,7 +149,7 @@ input:focus {
 }
 
 button {
-    width: 100%;
+    min-width: 110px;
     padding: 12px;
     background: var(--accent-color);
     border: none;
@@ -123,6 +184,61 @@ button:active {
 
 .error.hidden {
     opacity: 0;
+}
+
+.actions-row {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 18px;
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f8fafc;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: none;
+}
+
+.status {
+    margin-top: 8px;
+    text-align: left;
+    font-size: 13px;
+    border-radius: 10px;
+    padding: 9px 12px;
+    border: 1px solid transparent;
+}
+
+.status.info {
+    color: #fde68a;
+    border-color: rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.16);
+}
+
+.status.error {
+    color: #fecaca;
+    border-color: rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.16);
+}
+
+.status.success {
+    color: #dcfce7;
+    border-color: rgba(34, 197, 94, 0.35);
+    background: rgba(34, 197, 94, 0.16);
+}
+
+.hint {
+    margin: 8px 0 0 0;
+    text-align: left;
+    font-size: 12px;
+    color: #7dd3fc;
+}
+
+.hidden {
+    display: none;
 }
 
 @keyframes fadeIn {

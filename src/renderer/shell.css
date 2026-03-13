@@ -32,7 +32,35 @@ body {
     font-weight: 600;
     color: rgba(255, 255, 255, 0.9);
     letter-spacing: 0.02em;
-    flex: 1; /* Push everything after this to the right */
+    flex: 1;
+}
+
+.network-pill {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-right: 10px;
+    border: 1px solid transparent;
+    -webkit-app-region: no-drag;
+}
+
+.network-pill.local {
+    background: rgba(34, 197, 94, 0.16);
+    color: #86efac;
+    border-color: rgba(34, 197, 94, 0.35);
+}
+
+.network-pill.remote {
+    background: rgba(56, 189, 248, 0.16);
+    color: #7dd3fc;
+    border-color: rgba(56, 189, 248, 0.35);
+}
+
+.network-pill.offline {
+    background: rgba(239, 68, 68, 0.16);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.35);
 }
 
 .app-actions {
