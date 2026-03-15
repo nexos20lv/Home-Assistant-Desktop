@@ -3,6 +3,7 @@
 <p align="left">
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-007AFF?style=for-the-badge" alt="Platform">
   <img src="https://img.shields.io/github/v/release/nexos20lv/Home-Assistant-Desktop?style=for-the-badge&color=34C759" alt="Version">
+  <img src="https://img.shields.io/github/downloads/nexos20lv/Home-Assistant-Desktop/total?style=for-the-badge&label=Downloads&color=0A84FF" alt="Downloads">
   <img src="https://img.shields.io/github/actions/workflow/status/nexos20lv/Home-Assistant-Desktop/release.yml?style=for-the-badge&label=Build" alt="Build">
 </p>
 
