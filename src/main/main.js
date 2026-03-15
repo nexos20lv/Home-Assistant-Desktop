@@ -18,6 +18,9 @@ try {
 const store = new Store();
 const TOKEN_SERVICE = 'home-assistant-desktop';
 const TOKEN_ACCOUNT = 'ha-api-token';
+const DEFAULT_DISPLAY_SCALE = 100;
+const MIN_DISPLAY_SCALE = 50;
+const MAX_DISPLAY_SCALE = 200;
 
 const smartConnectState = {
     healthIntervalMs: 20000,
@@ -137,6 +140,13 @@ function normalizeUrl(rawUrl) {
     if (!value) return '';
     if (/^https?:\/\//i.test(value)) return value;
     return `http://${value}`;
+}
+
+function normalizeDisplayScale(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return DEFAULT_DISPLAY_SCALE;
+    const rounded = Math.round(parsed);
+    return Math.max(MIN_DISPLAY_SCALE, Math.min(MAX_DISPLAY_SCALE, rounded));
 }
 
 function timeoutPromise(ms) {
@@ -424,6 +434,9 @@ function createMainWindow() {
     });
 
     mainWindow.setBrowserView(view);
+
+    const displayScale = normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE));
+    view.webContents.setZoomFactor(displayScale / 100);
 
     view.webContents.on('did-fail-load', (_event, _errorCode, errorDescription, _validatedURL) => {
         addAppLog('warn', 'BrowserView failed to load page', errorDescription);
@@ -785,11 +798,13 @@ ipcMain.handle('get-settings', async () => {
         sensorIntervalMinutes: store.get('sensorIntervalMinutes', 1),
         powerSaverMode: store.get('powerSaverMode', false),
         startupScriptsSafeMode: store.get('startupScriptsSafeMode', true),
+        displayScale: normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE)),
         appVersion: app.getVersion()
     };
 });
 
 ipcMain.handle('save-settings', async (_event, settings) => {
+    const displayScale = normalizeDisplayScale(settings.displayScale);
     store.set('haUrl', normalizeUrl(settings.haUrl));
     store.set('remoteUrl', normalizeUrl(settings.remoteUrl));
     store.set('useRemote', settings.useRemote);
@@ -810,6 +825,11 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('sensorIntervalMinutes', Number(settings.sensorIntervalMinutes || 1));
     store.set('powerSaverMode', !!settings.powerSaverMode);
     store.set('startupScriptsSafeMode', settings.startupScriptsSafeMode !== false);
+    store.set('displayScale', displayScale);
+
+    if (view && !view.webContents.isDestroyed()) {
+        view.webContents.setZoomFactor(displayScale / 100);
+    }
 
     // 1. Auto Launch - Only attempt if packaged to avoid macOS Dev permission errors
     if (app.isPackaged) {

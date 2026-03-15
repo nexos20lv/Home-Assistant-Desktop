@@ -347,6 +347,22 @@
                 <div>
                   <div class="section-header">System behavior</div>
                   <div style="height: 12px;"></div>
+                  <div class="setting-row vertical">
+                      <div class="setting-info">
+                          <h3>Display Scale</h3>
+                          <p>Scale the Home Assistant dashboard UI to fit more columns.</p>
+                      </div>
+                      <select id="display-scale">
+                          <option value="80">80% (More content)</option>
+                          <option value="85">85%</option>
+                          <option value="90">90%</option>
+                          <option value="95">95%</option>
+                          <option value="100">100% (Default)</option>
+                          <option value="105">105%</option>
+                          <option value="110">110% (Larger)</option>
+                      </select>
+                  </div>
+
                   <div class="setting-row">
                       <div class="setting-info">
                           <h3>Launch on Startup</h3>
@@ -579,6 +595,7 @@
                 document.getElementById('sensor-interval-minutes').value = String(settings.sensorIntervalMinutes || 1);
                 document.getElementById('power-saver-mode').checked = !!settings.powerSaverMode;
                 document.getElementById('startup-scripts-safe-mode').checked = settings.startupScriptsSafeMode !== false;
+                document.getElementById('display-scale').value = String(settings.displayScale || 100);
                 document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
 
                 const logs = await window.prefsAPI.getErrorLogs();
@@ -612,7 +629,8 @@
                 reportActiveApp: document.getElementById('report-active-app').checked,
                 sensorIntervalMinutes: Number(document.getElementById('sensor-interval-minutes').value),
                 powerSaverMode: document.getElementById('power-saver-mode').checked,
-                startupScriptsSafeMode: document.getElementById('startup-scripts-safe-mode').checked
+                startupScriptsSafeMode: document.getElementById('startup-scripts-safe-mode').checked,
+                displayScale: Number(document.getElementById('display-scale').value)
             };
 
             await window.prefsAPI.saveSettings(settings);
