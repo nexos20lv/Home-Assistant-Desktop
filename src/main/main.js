@@ -41,6 +41,58 @@ const sensorDeliveryState = {
 const appLogBuffer = [];
 const APP_LOG_LIMIT = 300;
 
+// Load translations
+let translations = {};
+let currentLanguage = 'en';
+
+function loadTranslations() {
+    try {
+        const translationsPath = path.join(__dirname, '../locales/translations.json');
+        const data = fs.readFileSync(translationsPath, 'utf8');
+        translations = JSON.parse(data);
+        
+        // Get system language or saved preference
+        const savedLang = store.get('app-language');
+        if (savedLang && translations[savedLang]) {
+            currentLanguage = savedLang;
+        } else {
+            // Get system language from locale
+            let systemLang = 'en';
+            try {
+                // Try to get from Intl API
+                systemLang = Intl.DateTimeFormat().resolvedOptions().locale.split('-')[0];
+            } catch (e) {
+                // Fallback to process.env
+                const envLang = process.env.LANG || process.env.LC_ALL || process.env.LANGUAGE || '';
+                systemLang = envLang.split('_')[0].toLowerCase() || 'en';
+            }
+            currentLanguage = (systemLang && translations[systemLang]) ? systemLang : 'en';
+        }
+    } catch (e) {
+        console.error('Failed to load translations:', e.message);
+        currentLanguage = 'en';
+        translations = {};
+    }
+}
+
+function t(key) {
+    const keys = key.split('.');
+    let value = translations[currentLanguage] || {};
+    
+    for (const k of keys) {
+        value = value[k];
+        if (value === undefined) {
+            value = translations['en'] || {};
+            for (const fallbackK of keys) {
+                value = value[fallbackK];
+                if (value === undefined) return key;
+            }
+            return value;
+        }
+    }
+    return value;
+}
+
 let mainWindow;
 let view;
 let tray;
@@ -87,6 +139,10 @@ if (process.argv.includes('--quit')) {
 
 // Initialize Auto Updater
 const { updateElectronApp } = require('update-electron-app');
+
+// Load translations first
+loadTranslations();
+
 if (store.get('autoUpdates', true)) {
     updateElectronApp({
         repo: 'nexos20lv/Home-Assistant-Desktop',
@@ -502,12 +558,12 @@ function createMainWindow() {
     // Context Menu Implementation
     view.webContents.on('context-menu', (event, params) => {
         const menu = Menu.buildFromTemplate([
-            { label: 'Back', enabled: view.webContents.canGoBack(), click: () => view.webContents.goBack() },
-            { label: 'Forward', enabled: view.webContents.canGoForward(), click: () => view.webContents.goForward() },
-            { label: 'Reload', click: () => view.webContents.reload() },
+            { label: t('context.back'), enabled: view.webContents.canGoBack(), click: () => view.webContents.goBack() },
+            { label: t('context.forward'), enabled: view.webContents.canGoForward(), click: () => view.webContents.goForward() },
+            { label: t('context.reload'), click: () => view.webContents.reload() },
             { type: 'separator' },
-            { label: 'Copy Image Address', visible: params.mediaType === 'image', click: () => require('electron').clipboard.writeText(params.srcURL) }, // Fixed clipboard import
-            { label: 'Inspect Element', click: () => view.webContents.inspectElement(params.x, params.y) }
+            { label: t('context.copyImage'), visible: params.mediaType === 'image', click: () => require('electron').clipboard.writeText(params.srcURL) },
+            { label: t('context.inspect'), click: () => view.webContents.inspectElement(params.x, params.y) }
         ]);
         menu.popup(view);
     });
@@ -693,6 +749,57 @@ app.whenReady().then(async () => {
     }
 
     createMainWindow();
+    
+    // Build Application Menu with Preferences
+    const appName = (translations && translations[currentLanguage]) ? t('app.name') : 'Home Assistant Desktop';
+    const prefsLabel = (translations && translations[currentLanguage]) ? t('shell.preferences') : 'Preferences';
+    
+    const template = [
+        {
+            label: process.platform === 'darwin' ? 'Home Assistant Desktop' : appName,
+            submenu: [
+                {
+                    label: prefsLabel,
+                    accelerator: 'CommandOrControl+,',
+                    click: () => createPreferencesWindow()
+                },
+                { type: 'separator' },
+                { role: 'quit' }
+            ]
+        },
+        {
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' }
+            ]
+        }
+    ];
+    
+    // Add preferences to Edit menu on non-macOS systems
+    if (process.platform !== 'darwin') {
+        template[1].submenu.push({ type: 'separator' });
+        template[1].submenu.push({
+            label: prefsLabel,
+            accelerator: 'CommandOrControl+,',
+            click: () => createPreferencesWindow()
+        });
+    }
+    
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
+    console.log('Application menu created with Preferences option');
+    
+    // On Windows, make menu visible by default
+    if (process.platform === 'win32') {
+        mainWindow.setAutoHideMenuBar(false);
+        mainWindow.setMenuBarVisibility(true);
+    }
+    
     startSmartConnectMonitor();
     scheduleSensorReplay();
     runStartupScripts();
@@ -737,16 +844,16 @@ app.whenReady().then(async () => {
         tray = new Tray(trayIcon);
 
         const contextMenu = Menu.buildFromTemplate([
-            { label: 'Show App', click: () => mainWindow && mainWindow.show() },
+            { label: t('tray.show'), click: () => mainWindow && mainWindow.show() },
             { type: 'separator' },
             {
-                label: 'Support the Project (☕)', click: () => {
+                label: t('tray.support'), click: () => {
                     shell.openExternal('https://buymeacoffee.com/nexos20');
                 }
             },
             { type: 'separator' },
             {
-                label: 'Reset Configuration', click: () => {
+                label: t('tray.reset'), click: () => {
                     store.delete('haUrl');
                     app.relaunch();
                     app.exit(0);
@@ -754,13 +861,13 @@ app.whenReady().then(async () => {
             },
             { type: 'separator' },
             {
-                label: 'Quit', click: () => {
+                label: t('tray.quit'), click: () => {
                     isQuiting = true;
                     app.quit();
                 }
             }
         ]);
-        tray.setToolTip('Home Assistant Desktop');
+        tray.setToolTip(t('app.name'));
         tray.setContextMenu(contextMenu);
 
         tray.on('click', () => {

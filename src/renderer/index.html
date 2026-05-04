@@ -14,8 +14,21 @@
                     <path fill="currentColor" d="M10,20V14H14V20H19V12H22L12,3L2,12H5V20H10Z" />
                 </svg>
             </div>
-            <h1>Assistant de connexion</h1>
-            <p class="subtitle">Configuration guidée en 3 étapes.</p>
+            <h1 id="setup-title">Assistant de connexion</h1>
+            <p class="subtitle" id="setup-subtitle">Configuration guidée en 3 étapes.</p>
+
+            <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px; justify-content: center;">
+                <label for="setup-language-select" style="font-size: 12px; color: rgba(255,255,255,0.7);" id="language-label">Language:</label>
+                <select id="setup-language-select" style="padding: 6px 10px; border-radius: 4px; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); font-size: 12px; min-width: 120px;">
+                    <option value="en">English</option>
+                    <option value="fr">Français</option>
+                    <option value="es">Español</option>
+                    <option value="de">Deutsch</option>
+                    <option value="it">Italiano</option>
+                    <option value="pt">Português</option>
+                    <option value="nl">Nederlands</option>
+                </select>
+            </div>
 
             <div class="stepper" aria-label="Étapes d'installation">
                 <div class="step-dot active">1</div>
@@ -26,24 +39,24 @@
             </div>
 
             <div class="step-panel active" id="step-local">
-                <h2>URL locale</h2>
-                <p class="step-help">Adresse interne de Home Assistant sur ton réseau local.</p>
+                <h2 id="title-local">URL locale</h2>
+                <p class="step-help" id="help-local">Adresse interne de Home Assistant sur ton réseau local.</p>
                 <div class="input-group">
                     <input type="text" id="local-url-input" placeholder="homeassistant.local:8123" required>
                 </div>
             </div>
 
             <div class="step-panel" id="step-remote">
-                <h2>URL distante</h2>
-                <p class="step-help">Facultatif, utilisé quand tu es hors de chez toi.</p>
+                <h2 id="title-remote">URL distante</h2>
+                <p class="step-help" id="help-remote">Facultatif, utilisé quand tu es hors de chez toi.</p>
                 <div class="input-group">
                     <input type="text" id="remote-url-input" placeholder="xyz.ui.nabu.casa">
                 </div>
             </div>
 
             <div class="step-panel" id="step-token">
-                <h2>Token API</h2>
-                <p class="step-help">Facultatif ici, tu peux le modifier plus tard dans Préférences.</p>
+                <h2 id="title-token">Token API</h2>
+                <p class="step-help" id="help-token">Facultatif ici, tu peux le modifier plus tard dans Préférences.</p>
                 <div class="input-group">
                     <input type="password" id="token-input" placeholder="Long-lived access token">
                 </div>
@@ -60,6 +73,7 @@
             </div>
         </div>
     </div>
+    <script src="../locales/i18n.js"></script>
     <script src="renderer.js"></script>
 </body>
 </html>

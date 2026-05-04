@@ -14,7 +14,7 @@ body {
     backdrop-filter: blur(20px);
     display: flex;
     align-items: center;
-    padding: 0 16px 0 80px; /* 80px left padding for macOS traffic lights */
+    padding: 0 16px 0 80px; /* 80px left for macOS traffic lights */
     -webkit-app-region: drag;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     position: relative;
@@ -69,6 +69,11 @@ body {
     gap: 12px;
     -webkit-app-region: no-drag;
     margin-right: 8px;
+    position: absolute;
+    right: 130px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 2000;
 }
 
 
@@ -83,6 +88,7 @@ body {
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
+    flex-shrink: 0;
 }
 
 .app-actions button:hover {
