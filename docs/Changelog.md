@@ -4,6 +4,13 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [1.0.29] — 2026-05-19
+
+### Changed
+- CI: workflow now triggers only on changes to `src/**`, `package.json`, `package-lock.json`, or `.github/workflows/**` — docs-only pushes no longer produce a release
+
+---
+
 ## [1.0.28] — 2026-05-19
 
 ### Added
