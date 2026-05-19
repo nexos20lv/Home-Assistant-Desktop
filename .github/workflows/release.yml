@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/**'
   workflow_dispatch: # Allow manual trigger
 
 permissions:
