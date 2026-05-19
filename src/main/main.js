@@ -3,7 +3,7 @@ const path = require('path');
 const Store = require('electron-store');
 const fs = require('fs');
 const os = require('os');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { machineIdSync } = require('node-machine-id');
 const util = require('util');
 const execPromise = util.promisify(exec);
@@ -229,7 +229,9 @@ function healthCheckRequest(url, token) {
                 const code = response.statusCode || 0;
                 const authRequired = code === 401 || code === 403;
                 const ok = code >= 200 && code < 500;
-                resolve({ ok, code, authRequired });
+                response.on('data', () => {});
+                response.on('end', () => resolve({ ok, code, authRequired }));
+                response.on('error', () => resolve({ ok: false, code }));
             });
 
             request.on('error', (error) => {
@@ -246,13 +248,13 @@ function healthCheckRequest(url, token) {
 async function testHaConnection(url, token = '') {
     const normalized = normalizeUrl(url);
     if (!normalized) {
-        return { ok: false, message: 'URL manquante.' };
+        return { ok: false, message: 'Missing URL.' };
     }
 
     try {
         new URL(normalized);
     } catch (_error) {
-        return { ok: false, message: 'URL invalide.' };
+        return { ok: false, message: 'Invalid URL.' };
     }
 
     const result = await Promise.race([
@@ -261,14 +263,14 @@ async function testHaConnection(url, token = '') {
     ]);
 
     if (result.timeout) {
-        return { ok: false, message: 'Timeout: instance non joignable.' };
+        return { ok: false, message: 'Timeout: instance unreachable.' };
     }
 
     if (!result.ok) {
         if (result.message && /certificate|ssl|tls/i.test(result.message)) {
-            return { ok: false, message: 'Échec certificat SSL/TLS.' };
+            return { ok: false, message: 'SSL/TLS certificate error.' };
         }
-        return { ok: false, message: `Connexion impossible (${result.message || 'network error'}).` };
+        return { ok: false, message: `Connection failed (${result.message || 'network error'}).` };
     }
 
     return {
@@ -992,7 +994,9 @@ ipcMain.on('toggle-pip', () => {
         frame: false,
         alwaysOnTop: true,
         webPreferences: {
-            partition: 'persist:homeassistant'
+            partition: 'persist:homeassistant',
+            nodeIntegration: false,
+            contextIsolation: true
         }
     });
 
@@ -1021,7 +1025,7 @@ function getBatteryInfo() {
             });
         } else if (process.platform === 'win32') {
             const script = 'powershell -command "Get-WmiObject -Class Win32_Battery | Select-Object -First 1 | ForEach-Object { \\"$($_.EstimatedChargeRemaining),$($_.BatteryStatus),$($_.EstimatedRunTime)\\" }"';
-            exec(script, (error, stdout) => {
+            exec(script, { windowsHide: true }, (error, stdout) => {
                 if (error || !stdout) return resolve(null);
                 const parts = stdout.trim().split(',');
                 if (parts.length < 2) return resolve(null);
@@ -1062,7 +1066,7 @@ function getActiveApp() {
     return new Promise((resolve) => {
         if (process.platform === 'darwin') {
             const script = 'tell application "System Events" to get name of first process whose frontmost is true';
-            exec(`osascript -e '${script}'`, (error, stdout) => {
+            execFile('osascript', ['-e', script], (error, stdout) => {
                 resolve(error ? 'Unknown' : stdout.trim());
             });
         } else if (process.platform === 'win32') {
@@ -1127,9 +1131,14 @@ function getEffectiveUrl() {
 
 function handleDeepLink(url) {
     if (!view) return;
-    const path = url.replace('ha-desktop://', '');
+    const rawPath = url.replace('ha-desktop://', '');
     const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
-    view.webContents.loadURL(`${haUrl}/${path}`);
+    if (!haUrl) return;
+    try {
+        const target = new URL(rawPath, haUrl);
+        if (target.origin !== new URL(haUrl).origin) return;
+        view.webContents.loadURL(target.href);
+    } catch (_) { /* invalid URL, ignore */ }
 }
 
 function getSensorBaseIntervalMs() {
@@ -1234,7 +1243,7 @@ function startSensorReporting() {
 
             let cpuPercent = 0;
             if (totalDifference > 0) {
-                cpuPercent = Math.round(100 - (100 * idleDifference / totalDifference));
+                cpuPercent = Math.max(0, Math.min(100, Math.round(100 - (100 * idleDifference / totalDifference))));
             }
             previousCpuInfo = currentCpuInfo;
 
@@ -1250,85 +1259,92 @@ function startSensorReporting() {
             const reportMic = store.get('reportMic', true);
             const reportCamera = store.get('reportCamera', true);
 
-            const activeApp = reportActiveApp ? await getActiveApp() : 'hidden';
+            // Gather all OS data in parallel before sending
+            const [activeApp, dndStatus, mediaStatus, batteryInfo] = await Promise.all([
+                reportActiveApp ? getActiveApp() : Promise.resolve('hidden'),
+                reportDnd ? getDNDStatus() : Promise.resolve(false),
+                reportMedia ? getMicCameraStatus() : Promise.resolve({ mic: false, cam: false }),
+                getBatteryInfo()
+            ]);
 
-            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_memory_usage`, {
-                state: memPercent,
-                attributes: {
-                    friendly_name: `${os.hostname()} Memory Usage`,
-                    unit_of_measurement: '%',
-                    icon: 'mdi:memory',
-                    total_memory_gb: (totalMem / (1024 ** 3)).toFixed(2),
-                    free_memory_gb: (freeMem / (1024 ** 3)).toFixed(2),
-                    unique_id: `${uniqueId}_memory`
-                }
-            });
+            const cameraActive = reportCamera ? mediaStatus.cam : false;
+            const micActive = reportMic ? mediaStatus.mic : false;
+            const hostname = os.hostname();
 
-            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_cpu_usage`, {
-                state: cpuPercent,
-                attributes: {
-                    friendly_name: `${os.hostname()} CPU Usage`,
-                    unit_of_measurement: '%',
-                    icon: 'mdi:cpu-64-bit',
-                    unique_id: `${uniqueId}_cpu`
-                }
-            });
-
-            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_status`, {
-                state: 'Active',
-                attributes: {
-                    friendly_name: `${os.hostname()} Status`,
-                    hostname: os.hostname(),
-                    platform: os.platform(),
-                    arch: os.arch(),
-                    uptime_hours: (os.uptime() / 3600).toFixed(2),
-                    is_idle: powerMonitor.getSystemIdleState(300) === 'idle',
-                    active_app: activeApp,
-                    dnd_mode: reportDnd ? await getDNDStatus() : false,
-                    icon: 'mdi:desktop-tower',
-                    unique_id: `${uniqueId}_status`
-                }
-            });
+            const sends = [
+                reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_memory_usage`, {
+                    state: memPercent,
+                    attributes: {
+                        friendly_name: `${hostname} Memory Usage`,
+                        unit_of_measurement: '%',
+                        icon: 'mdi:memory',
+                        total_memory_gb: (totalMem / (1024 ** 3)).toFixed(2),
+                        free_memory_gb: (freeMem / (1024 ** 3)).toFixed(2),
+                        unique_id: `${uniqueId}_memory`
+                    }
+                }),
+                reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_cpu_usage`, {
+                    state: cpuPercent,
+                    attributes: {
+                        friendly_name: `${hostname} CPU Usage`,
+                        unit_of_measurement: '%',
+                        icon: 'mdi:cpu-64-bit',
+                        unique_id: `${uniqueId}_cpu`
+                    }
+                }),
+                reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_status`, {
+                    state: 'Active',
+                    attributes: {
+                        friendly_name: `${hostname} Status`,
+                        hostname: hostname,
+                        platform: os.platform(),
+                        arch: os.arch(),
+                        uptime_hours: (os.uptime() / 3600).toFixed(2),
+                        is_idle: powerMonitor.getSystemIdleState(300) === 'idle',
+                        active_app: activeApp,
+                        dnd_mode: dndStatus,
+                        icon: 'mdi:desktop-tower',
+                        unique_id: `${uniqueId}_status`
+                    }
+                }),
+                reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_uptime`, {
+                    state: (os.uptime() / 3600).toFixed(2),
+                    attributes: {
+                        friendly_name: `${hostname} Uptime`,
+                        unit_of_measurement: 'h',
+                        icon: 'mdi:clock-outline',
+                        unique_id: `${uniqueId}_uptime`
+                    }
+                })
+            ];
 
             if (reportMedia) {
-                const mediaStatus = await getMicCameraStatus();
-                const cameraActive = reportCamera ? mediaStatus.cam : false;
-                const micActive = reportMic ? mediaStatus.mic : false;
-                await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_media_status`, {
+                sends.push(reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_media_status`, {
                     state: cameraActive || micActive ? 'In Use' : 'Idle',
                     attributes: {
-                        friendly_name: `${os.hostname()} Media Activity`,
+                        friendly_name: `${hostname} Media Activity`,
                         camera_active: cameraActive,
                         microphone_active: micActive,
                         icon: cameraActive ? 'mdi:camera' : (micActive ? 'mdi:microphone' : 'mdi:camera-off'),
                         unique_id: `${uniqueId}_media`
                     }
-                });
+                }));
             }
 
-            await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_uptime`, {
-                state: (os.uptime() / 3600).toFixed(2),
-                attributes: {
-                    friendly_name: `${os.hostname()} Uptime`,
-                    unit_of_measurement: 'h',
-                    icon: 'mdi:clock-outline',
-                    unique_id: `${uniqueId}_uptime`
-                }
-            });
-
-            const batteryInfo = await getBatteryInfo();
             if (batteryInfo) {
-                await reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_battery`, {
+                sends.push(reportSensor(haUrl, apiToken, `sensor.${safeHostname}_desktop_battery`, {
                     state: batteryInfo.percent,
                     attributes: {
-                        friendly_name: `${os.hostname()} Battery`,
+                        friendly_name: `${hostname} Battery`,
                         unit_of_measurement: '%',
                         icon: batteryInfo.status === 'charging' ? 'mdi:battery-charging' : 'mdi:battery',
                         status: batteryInfo.status,
                         unique_id: `${uniqueId}_battery`
                     }
-                });
+                }));
             }
+
+            await Promise.all(sends);
 
             await flushSensorQueue();
             lastSensorReportAt = Date.now();

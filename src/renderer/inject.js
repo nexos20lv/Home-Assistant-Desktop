@@ -26,13 +26,20 @@ const createButton = () => {
     console.log('Home Assistant Desktop: Creating button...');
     const btn = document.createElement('button');
     btn.id = 'ha-desktop-disconnect-btn';
-    const disconnectText = (window.i18n && window.i18n.t('shell.disconnectButton')) || 'Disconnect App';
-    btn.innerHTML = `
-        <svg style="width:24px;height:24px" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M17,7L15.59,8.41L18.17,11H8V13H18.17L15.59,15.58L17,17L22,12L17,7M4,5H12V3H4A2,2 0 0,0 2,5V19A2,2 0 0,0 4,21H12V19H4V5Z" />
-        </svg>
-        <span style="margin-left: 8px;">${disconnectText}</span>
-    `;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.style.cssText = 'width:24px;height:24px';
+    const svgPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    svgPath.setAttribute('fill', 'currentColor');
+    svgPath.setAttribute('d', 'M17,7L15.59,8.41L18.17,11H8V13H18.17L15.59,15.58L17,17L22,12L17,7M4,5H12V3H4A2,2 0 0,0 2,5V19A2,2 0 0,0 4,21H12V19H4V5Z');
+    svg.appendChild(svgPath);
+
+    const label = document.createElement('span');
+    label.style.marginLeft = '8px';
+    label.textContent = (window.i18n && window.i18n.t('shell.disconnectButton')) || 'Disconnect App';
+
+    btn.appendChild(svg);
+    btn.appendChild(label);
 
     // Explicit styles
     btn.style.position = 'fixed';
