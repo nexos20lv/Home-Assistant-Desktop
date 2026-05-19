@@ -294,6 +294,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                 <span data-i18n="preferences.advanced">Advanced</span>
             </button>
+            <button class="tab-btn" onclick="showTab('servers', this)" id="servers-tab-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                <span>Servers</span>
+            </button>
             <button class="tab-btn" onclick="showTab('translations', this)" id="translations-tab-btn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 <span>Translations</span>
@@ -346,6 +350,14 @@
                           <input type="checkbox" id="smart-connect-enabled">
                           <span class="slider"></span>
                       </label>
+                  </div>
+
+                  <div class="setting-row vertical">
+                      <div class="setting-info">
+                          <h3>Startup Dashboard Path</h3>
+                          <p>Page to open on launch, relative to your HA URL (e.g. <code>/lovelace/home</code>). Leave empty for the default dashboard.</p>
+                      </div>
+                      <input type="text" id="startup-path" placeholder="/lovelace/home">
                   </div>
                 </div>
 
@@ -626,6 +638,18 @@
                 </div>
             </div>
 
+            <!-- SERVERS TAB -->
+            <div id="tab-servers" class="tab-content">
+                <div class="section-header">Server Profiles</div>
+                <div style="height: 8px;"></div>
+                <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">
+                    Manage multiple Home Assistant instances. The active server is used on launch and in the tray menu.
+                </p>
+                <div id="servers-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
+                <button id="add-server-btn" class="secondary-btn" style="margin-top: 16px; align-self: flex-start;">+ Add Server</button>
+                <button id="save-servers-btn" class="primary-btn" style="margin-top: 12px; align-self: flex-start;">Save Servers</button>
+            </div>
+
             <div class="footer-group">
                 <button class="secondary-btn" id="close-btn">Discard</button>
                 <button class="primary-btn" id="save-btn">Save Preferences</button>
@@ -665,6 +689,7 @@
                 document.getElementById('power-saver-mode').checked = !!settings.powerSaverMode;
                 document.getElementById('startup-scripts-safe-mode').checked = settings.startupScriptsSafeMode !== false;
                 document.getElementById('display-scale').value = String(settings.displayScale || 100);
+                document.getElementById('startup-path').value = settings.startupPath || '';
                 document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
 
                 const logs = await window.prefsAPI.getErrorLogs();
@@ -699,7 +724,8 @@
                 sensorIntervalMinutes: Number(document.getElementById('sensor-interval-minutes').value),
                 powerSaverMode: document.getElementById('power-saver-mode').checked,
                 startupScriptsSafeMode: document.getElementById('startup-scripts-safe-mode').checked,
-                displayScale: Number(document.getElementById('display-scale').value)
+                displayScale: Number(document.getElementById('display-scale').value),
+                startupPath: document.getElementById('startup-path').value.trim()
             };
 
             await window.prefsAPI.saveSettings(settings);
@@ -782,8 +808,62 @@
         transLangSelect.addEventListener('change', updateTranslationPreview);
 
         initTranslationManager();
-        
         init();
+
+        // ── Servers tab ──────────────────────────────────────────────────────
+        let _servers = [];
+        let _activeServerId = '';
+
+        function renderServers() {
+            const list = document.getElementById('servers-list');
+            list.innerHTML = '';
+            _servers.forEach((s, i) => {
+                const card = document.createElement('div');
+                card.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;';
+                card.innerHTML = `
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <input type="radio" name="active-server" value="${s.id}" ${s.id === _activeServerId ? 'checked' : ''} style="accent-color:var(--accent);" title="Set as active">
+                        <input type="text" data-idx="${i}" data-field="name" value="${s.name || ''}" placeholder="Server name" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:white;font-size:13px;">
+                        <button data-del="${i}" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#ef4444;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">Remove</button>
+                    </div>
+                    <input type="text" data-idx="${i}" data-field="localUrl" value="${s.localUrl || ''}" placeholder="Local URL (http://192.168.1.5:8123)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:white;font-size:12px;font-family:monospace;">
+                    <input type="text" data-idx="${i}" data-field="remoteUrl" value="${s.remoteUrl || ''}" placeholder="Remote URL (optional)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:white;font-size:12px;font-family:monospace;">
+                `;
+                card.querySelectorAll('input[type=text]').forEach(inp => {
+                    inp.addEventListener('input', e => { _servers[e.target.dataset.idx][e.target.dataset.field] = e.target.value; });
+                });
+                card.querySelector('input[type=radio]').addEventListener('change', e => { _activeServerId = e.target.value; });
+                card.querySelector('[data-del]').addEventListener('click', e => { _servers.splice(Number(e.target.dataset.del), 1); if (_activeServerId === s.id && _servers.length) _activeServerId = _servers[0].id; renderServers(); });
+                list.appendChild(card);
+            });
+        }
+
+        async function initServers() {
+            if (!window.prefsAPI.getServers) return;
+            try {
+                const data = await window.prefsAPI.getServers();
+                _servers = data.servers || [];
+                _activeServerId = data.activeServerId || (_servers[0]?.id || '');
+                renderServers();
+            } catch (e) { console.error('Failed to load servers', e); }
+        }
+
+        document.getElementById('add-server-btn').addEventListener('click', () => {
+            const id = Date.now().toString();
+            _servers.push({ id, name: 'New Server', localUrl: '', remoteUrl: '', useRemote: false, smartConnect: true });
+            if (!_activeServerId) _activeServerId = id;
+            renderServers();
+        });
+
+        document.getElementById('save-servers-btn').addEventListener('click', async () => {
+            if (!window.prefsAPI.saveServers) return;
+            await window.prefsAPI.saveServers({ servers: _servers, activeServerId: _activeServerId });
+            const toast = document.getElementById('toast');
+            toast.classList.add('visible');
+            setTimeout(() => toast.classList.remove('visible'), 1200);
+        });
+
+        initServers();
     </script>
 </body>
 </html>

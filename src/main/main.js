@@ -22,8 +22,10 @@ const DEFAULT_DISPLAY_SCALE = 100;
 const MIN_DISPLAY_SCALE = 50;
 const MAX_DISPLAY_SCALE = 200;
 
+const haWsManager = { ws: null, reconnectTimer: null, isConnected: false };
+
 const smartConnectState = {
-    healthIntervalMs: 20000,
+    healthIntervalMs: 300000,
     cooldownMs: 120000,
     lastSwitchAt: 0,
     currentTarget: 'unknown',
@@ -134,6 +136,11 @@ if (!gotTheLock) {
 // Check if launched with --quit (Cold Start)
 if (process.argv.includes('--quit')) {
     app.quit();
+}
+
+if (process.platform === 'linux') {
+    app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+    app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
 }
 
 
@@ -454,6 +461,120 @@ function isStartupScriptSafe(command) {
     return !blockedPatterns.some((pattern) => pattern.test(command));
 }
 
+// ─── Multi-server profiles ───────────────────────────────────────────────────
+
+function loadServers() {
+    let servers = store.get('servers', null);
+    if (!servers) {
+        const haUrl = store.get('haUrl', '');
+        const remoteUrl = store.get('remoteUrl', '');
+        servers = haUrl
+            ? [{ id: '1', name: 'Home', localUrl: haUrl, remoteUrl: remoteUrl || '', useRemote: store.get('useRemote', false), smartConnect: store.get('smartConnectEnabled', true) }]
+            : [];
+        store.set('servers', servers);
+        if (servers.length) store.set('activeServerId', '1');
+    }
+    return servers;
+}
+
+function getActiveServer() {
+    const servers = store.get('servers', []);
+    const activeId = store.get('activeServerId', servers[0]?.id);
+    return servers.find(s => s.id === activeId) || servers[0] || null;
+}
+
+function switchToServer(id) {
+    const servers = store.get('servers', []);
+    const server = servers.find(s => s.id === id);
+    if (!server) return;
+    store.set('activeServerId', id);
+    store.set('haUrl', server.localUrl);
+    store.set('remoteUrl', server.remoteUrl || '');
+    store.set('useRemote', server.useRemote || false);
+    store.set('smartConnectEnabled', server.smartConnect !== false);
+    smartConnectState.currentTarget = 'unknown';
+    if (view && !view.webContents.isDestroyed()) {
+        const url = server.useRemote ? server.remoteUrl : server.localUrl;
+        if (url) view.webContents.loadURL(url);
+    }
+    evaluateSmartConnect().catch(() => {});
+    updateTrayMenu();
+    connectHaWebSocket().catch(() => {});
+}
+
+function updateTrayMenu() {
+    if (!tray) return;
+    const servers = store.get('servers', []);
+    const activeId = store.get('activeServerId', '');
+    const serverItems = servers.length > 1
+        ? [{ label: 'Servers', submenu: servers.map(s => ({ label: s.name || s.localUrl, type: 'radio', checked: s.id === activeId, click: () => switchToServer(s.id) })) }, { type: 'separator' }]
+        : [];
+    const contextMenu = Menu.buildFromTemplate([
+        { label: t('tray.show'), click: () => mainWindow && mainWindow.show() },
+        { type: 'separator' },
+        ...serverItems,
+        { label: t('tray.support'), click: () => shell.openExternal('https://buymeacoffee.com/nexos20') },
+        { type: 'separator' },
+        { label: t('tray.reset'), click: () => { store.delete('haUrl'); store.delete('servers'); app.relaunch(); app.exit(0); } },
+        { type: 'separator' },
+        { label: t('tray.quit'), click: () => { isQuiting = true; app.quit(); } }
+    ]);
+    tray.setToolTip(t('app.name'));
+    tray.setContextMenu(contextMenu);
+}
+
+// ─── WebSocket connection monitor ────────────────────────────────────────────
+
+async function connectHaWebSocket() {
+    if (haWsManager.reconnectTimer) { clearTimeout(haWsManager.reconnectTimer); haWsManager.reconnectTimer = null; }
+    if (haWsManager.ws) { haWsManager.ws.onclose = null; try { haWsManager.ws.close(); } catch (_) {} haWsManager.ws = null; }
+
+    const baseUrl = getCurrentBaseUrl() || getEffectiveUrl();
+    if (!baseUrl) return;
+    const token = await getApiToken();
+    if (!token) return;
+
+    const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/$/, '') + '/api/websocket';
+
+    try {
+        const ws = new WebSocket(wsUrl);
+        haWsManager.ws = ws;
+
+        ws.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'auth_required') {
+                    ws.send(JSON.stringify({ type: 'auth', access_token: token }));
+                } else if (msg.type === 'auth_ok') {
+                    haWsManager.isConnected = true;
+                    addAppLog('info', 'HA WebSocket authenticated');
+                    if (smartConnectState.currentTarget === 'unknown' || smartConnectState.currentTarget === 'offline') {
+                        evaluateSmartConnect().catch(() => {});
+                    }
+                } else if (msg.type === 'auth_invalid') {
+                    addAppLog('warn', 'HA WebSocket auth invalid — token may have expired');
+                    ws.close();
+                }
+            } catch (_) {}
+        };
+
+        ws.onclose = () => {
+            haWsManager.isConnected = false;
+            haWsManager.ws = null;
+            if (!isQuiting) {
+                haWsManager.reconnectTimer = setTimeout(() => connectHaWebSocket().catch(() => {}), 8000);
+            }
+        };
+
+        ws.onerror = (err) => {
+            addAppLog('warn', 'HA WebSocket error', err.message || 'unknown');
+        };
+    } catch (error) {
+        addAppLog('warn', 'HA WebSocket failed to connect', error.message);
+        haWsManager.reconnectTimer = setTimeout(() => connectHaWebSocket().catch(() => {}), 15000);
+    }
+}
+
 function createMainWindow() {
     const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
 
@@ -462,9 +583,14 @@ function createMainWindow() {
         return;
     }
 
+    const savedBounds = store.get('windowBounds', { width: 1200, height: 800 });
+    const savedMaximized = store.get('windowMaximized', false);
+
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
+        width: savedBounds.width || 1200,
+        height: savedBounds.height || 800,
+        x: savedBounds.x,
+        y: savedBounds.y,
         icon: path.join(__dirname, '../assets/logo.png'),
         titleBarStyle: 'hidden',
         titleBarOverlay: {
@@ -478,6 +604,9 @@ function createMainWindow() {
             preload: path.join(__dirname, 'preload.js') // IPC for shell buttons
         }
     });
+
+    // Restore maximized state
+    if (savedMaximized) mainWindow.maximize();
 
     // Load the shell (custom title bar)
     mainWindow.loadFile(path.join(__dirname, '../renderer/shell.html'));
@@ -595,8 +724,12 @@ function createMainWindow() {
         callback(permissionAllowed);
     });
 
-    // Load HA URL into the view
-    view.webContents.loadURL(haUrl);
+    // Load HA URL into the view (with optional startup path)
+    const _startupPath = store.get('startupPath', '');
+    const _startupUrl = _startupPath
+        ? haUrl.replace(/\/$/, '') + (_startupPath.startsWith('/') ? _startupPath : '/' + _startupPath)
+        : haUrl;
+    view.webContents.loadURL(_startupUrl);
     emitNetworkStatus();
 
     // Handle Resize
@@ -605,6 +738,23 @@ function createMainWindow() {
     mainWindow.on('unmaximize', updateViewBounds);
     mainWindow.on('enter-full-screen', updateViewBounds);
     mainWindow.on('leave-full-screen', updateViewBounds);
+
+    // Persist window bounds and maximized state
+    let _winStateSaveTimer = null;
+    const _saveWindowState = () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMaximized()) {
+            store.set('windowMaximized', true);
+        } else if (!mainWindow.isFullScreen() && !mainWindow.isMinimized()) {
+            store.set('windowMaximized', false);
+            store.set('windowBounds', mainWindow.getBounds());
+        }
+    };
+    const _debouncedSaveState = () => { clearTimeout(_winStateSaveTimer); _winStateSaveTimer = setTimeout(_saveWindowState, 500); };
+    mainWindow.on('resize', _debouncedSaveState);
+    mainWindow.on('move', _debouncedSaveState);
+    mainWindow.on('maximize', () => store.set('windowMaximized', true));
+    mainWindow.on('unmaximize', () => { store.set('windowMaximized', false); store.set('windowBounds', mainWindow.getBounds()); });
 
 
     mainWindow.on('close', function (event) {
@@ -747,6 +897,8 @@ app.whenReady().then(async () => {
         await setApiToken(legacyToken);
     }
 
+    loadServers();
+
     if (process.platform === 'darwin' && store.get('biometricLock', false)) {
         const { systemPreferences } = require('electron');
         if (systemPreferences.canPromptTouchID()) {
@@ -814,6 +966,7 @@ app.whenReady().then(async () => {
     startSmartConnectMonitor();
     scheduleSensorReplay();
     runStartupScripts();
+    connectHaWebSocket().catch(() => {});
 
     // Usage of startup settings
     if (store.get('globalShortcut', false)) {
@@ -854,32 +1007,7 @@ app.whenReady().then(async () => {
         }
         tray = new Tray(trayIcon);
 
-        const contextMenu = Menu.buildFromTemplate([
-            { label: t('tray.show'), click: () => mainWindow && mainWindow.show() },
-            { type: 'separator' },
-            {
-                label: t('tray.support'), click: () => {
-                    shell.openExternal('https://buymeacoffee.com/nexos20');
-                }
-            },
-            { type: 'separator' },
-            {
-                label: t('tray.reset'), click: () => {
-                    store.delete('haUrl');
-                    app.relaunch();
-                    app.exit(0);
-                }
-            },
-            { type: 'separator' },
-            {
-                label: t('tray.quit'), click: () => {
-                    isQuiting = true;
-                    app.quit();
-                }
-            }
-        ]);
-        tray.setToolTip(t('app.name'));
-        tray.setContextMenu(contextMenu);
+        updateTrayMenu();
 
         tray.on('click', () => {
             if (mainWindow) mainWindow.show();
@@ -917,6 +1045,7 @@ ipcMain.handle('get-settings', async () => {
         powerSaverMode: store.get('powerSaverMode', false),
         startupScriptsSafeMode: store.get('startupScriptsSafeMode', true),
         displayScale: normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE)),
+        startupPath: store.get('startupPath', ''),
         appVersion: app.getVersion()
     };
 });
@@ -944,6 +1073,7 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('powerSaverMode', !!settings.powerSaverMode);
     store.set('startupScriptsSafeMode', settings.startupScriptsSafeMode !== false);
     store.set('displayScale', displayScale);
+    store.set('startupPath', settings.startupPath || '');
 
     if (view && !view.webContents.isDestroyed()) {
         view.webContents.setZoomFactor(displayScale / 100);
@@ -976,6 +1106,30 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     await evaluateSmartConnect();
     startSensorReporting();
 
+    return true;
+});
+
+ipcMain.on('switch-server', (_event, id) => {
+    switchToServer(String(id));
+});
+
+ipcMain.handle('get-servers', () => {
+    return { servers: store.get('servers', []), activeServerId: store.get('activeServerId', '') };
+});
+
+ipcMain.handle('save-servers', (_event, { servers, activeServerId }) => {
+    store.set('servers', servers || []);
+    if (activeServerId) {
+        store.set('activeServerId', activeServerId);
+        const active = (servers || []).find(s => s.id === activeServerId);
+        if (active) {
+            store.set('haUrl', active.localUrl || '');
+            store.set('remoteUrl', active.remoteUrl || '');
+            store.set('useRemote', active.useRemote || false);
+            store.set('smartConnectEnabled', active.smartConnect !== false);
+        }
+    }
+    updateTrayMenu();
     return true;
 });
 
@@ -1381,6 +1535,8 @@ app.on('will-quit', () => {
     if (smartConnectState.timer) clearInterval(smartConnectState.timer);
     if (sensorDeliveryState.replayTimer) clearInterval(sensorDeliveryState.replayTimer);
     if (sensorTickTimer) clearTimeout(sensorTickTimer);
+    if (haWsManager.reconnectTimer) clearTimeout(haWsManager.reconnectTimer);
+    if (haWsManager.ws) { haWsManager.ws.onclose = null; try { haWsManager.ws.close(); } catch (_) {} }
     globalShortcut.unregisterAll();
 });
 
