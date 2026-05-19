@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     togglePiP: () => ipcRenderer.send('toggle-pip'),
     switchServer: (index) => ipcRenderer.send('switch-server', index),
     onNetworkStatus: (callback) => {
+        ipcRenderer.removeAllListeners('network-status');
         ipcRenderer.on('network-status', (_event, status) => callback(status));
     }
 });

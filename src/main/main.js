@@ -518,11 +518,17 @@ function createMainWindow() {
     };
 
     nativeTheme.on('updated', syncTheme);
-    view.webContents.on('did-finish-load', () => {
+    mainWindow.once('closed', () => nativeTheme.off('updated', syncTheme));
+
+    let customCSSKey = null;
+    view.webContents.on('did-finish-load', async () => {
         syncTheme();
         const customCSS = store.get('customCSS', '');
         if (customCSS) {
-            view.webContents.insertCSS(customCSS);
+            if (customCSSKey) {
+                await view.webContents.removeInsertedCSS(customCSSKey).catch(() => {});
+            }
+            customCSSKey = await view.webContents.insertCSS(customCSS);
         }
     });
 
@@ -563,7 +569,10 @@ function createMainWindow() {
             { label: t('context.reload'), click: () => view.webContents.reload() },
             { type: 'separator' },
             { label: t('context.copyImage'), visible: params.mediaType === 'image', click: () => require('electron').clipboard.writeText(params.srcURL) },
-            { label: t('context.inspect'), click: () => view.webContents.inspectElement(params.x, params.y) }
+            { label: t('context.inspect'), click: () => view.webContents.inspectElement(params.x, params.y) },
+            { type: 'separator' },
+            { label: t('tray.show') + ' ' + t('app.name'), click: () => mainWindow && mainWindow.show() },
+            { label: t('shell.preferences'), click: () => createPreferencesWindow() }
         ]);
         menu.popup(view);
     });
@@ -726,7 +735,7 @@ const runStartupScripts = async () => {
             addAppLog('warn', 'Blocked unsafe startup script', cmd);
             continue;
         }
-        exec(cmd).unref();
+        exec(cmd, { windowsHide: true }).unref();
     }
 };
 
@@ -1058,7 +1067,7 @@ function getActiveApp() {
             });
         } else if (process.platform === 'win32') {
             const script = 'powershell -command "(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object -Property LastAccessTime -Descending | Select-Object -First 1).ProcessName"';
-            exec(script, (error, stdout) => {
+            exec(script, { windowsHide: true }, (error, stdout) => {
                 resolve(error ? 'Unknown' : stdout.trim());
             });
         } else {
@@ -1082,7 +1091,7 @@ function getMicCameraStatus() {
                 $regMic = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone';
                 $mic = (Get-ItemProperty $regMic -ErrorAction SilentlyContinue).LastUsedTimeStop -eq 0;
                 Write-Output \\"$cam,$mic\\" "`;
-            exec(script, (error, stdout) => {
+            exec(script, { windowsHide: true }, (error, stdout) => {
                 if (error || !stdout) return resolve({ mic: false, cam: false });
                 const [cam, mic] = stdout.trim().split(',').map(v => v === 'True');
                 resolve({ mic, cam });
@@ -1100,7 +1109,7 @@ function getDNDStatus() {
                 resolve(!error && stdout.includes('1')); 
             });
         } else if (process.platform === 'win32') {
-            exec('powershell -Command "(Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings).NOC_GLOBAL_SETTING_TOASTS_ENABLED"', (error, stdout) => {
+            exec('powershell -Command "(Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings).NOC_GLOBAL_SETTING_TOASTS_ENABLED"', { windowsHide: true }, (error, stdout) => {
                 resolve(stdout.trim() === '0');
             });
         } else {
@@ -1164,7 +1173,9 @@ async function postSensor(baseUrl, token, entityId, data) {
 
         request.on('response', (response) => {
             const code = response.statusCode || 0;
-            resolve({ ok: code >= 200 && code < 300, code });
+            response.on('data', () => {});
+            response.on('end', () => resolve({ ok: code >= 200 && code < 300, code }));
+            response.on('error', () => resolve({ ok: false, code }));
         });
         request.on('error', (error) => {
             resolve({ ok: false, message: error.message });
@@ -1344,21 +1355,6 @@ function getCpuInfo() {
     }
 
     return { idle, total };
-}
-
-function reportSensor(baseUrl, token, entityId, data) {
-    const { net } = require('electron');
-    const request = net.request({
-        method: 'POST',
-        url: `${baseUrl}/api/states/${entityId}`,
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-        }
-    });
-    request.on('error', (e) => console.log(`Sensor update failed: ${e.message}`));
-    request.write(JSON.stringify(data));
-    request.end();
 }
 
 app.on('window-all-closed', function () {

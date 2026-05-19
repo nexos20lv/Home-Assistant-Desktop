@@ -89,8 +89,16 @@ if (document.readyState === 'loading') {
     updateButtonVisibility();
 }
 
-// Periodic check to ensure button persist/visibility on navigation
-setInterval(() => {
+// React to SPA navigation without polling
+const _onNavigate = () => {
+    createTitleBar();
     updateButtonVisibility();
-    createTitleBar(); // Ensure title bar persists too
-}, 500);
+};
+
+window.addEventListener('popstate', _onNavigate);
+
+const _origPush = history.pushState.bind(history);
+history.pushState = (...args) => { _origPush(...args); _onNavigate(); };
+
+const _origReplace = history.replaceState.bind(history);
+history.replaceState = (...args) => { _origReplace(...args); _onNavigate(); };
