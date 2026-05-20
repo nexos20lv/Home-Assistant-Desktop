@@ -8,7 +8,7 @@ Project context and conventions for Claude Code. Read this before touching any f
 
 An Electron desktop client for Home Assistant. It wraps the HA web UI in a native shell and adds OS-level features: hardware sensors reported to HA, Smart Connect URL failover, multi-server profiles, deep linking, PiP, biometric lock, media keys, custom CSS injection, startup scripts, and more.
 
-**Current version:** 1.0.29  
+**Current version:** 1.0.30  
 **GitHub:** https://github.com/nexos20lv/Home-Assistant-Desktop  
 **License:** MIT  
 **Author:** NeXoS_20
@@ -44,8 +44,8 @@ src/
     renderer.js       ← Setup wizard logic
     styles.css        ← Setup wizard styles
     preferences.html  ← All settings UI (5 tabs: General/Sensors/Advanced/Servers/Translations)
-    inject.js         ← Injected into the HA BrowserView (disconnect button, SPA nav detection)
-    inject.css        ← Injected styles
+    inject.js         ← Exists as a file but is NOT loaded/injected anywhere in main.js currently
+    inject.css        ← Injected styles (also unused currently)
   locales/
     translations.json ← All UI strings for 7 languages (en/fr/es/de/it/pt/nl)
     i18n.js           ← Translation loader used in renderer contexts
@@ -66,25 +66,26 @@ docs/                 ← Wiki pages (docs-only, no CI trigger)
 Main Process (main.js)
   ├── BrowserWindow: shell.html  ←→  preload.js
   │     └── BrowserView: Home Assistant  (partition: persist:homeassistant)
-  │           └── inject.js + inject.css injected after load
   └── BrowserWindow: preferences.html  ←→  preload-prefs.js  (modal-less)
 ```
 
 - `contextIsolation: true`, `nodeIntegration: false` everywhere
 - The HA BrowserView has **no preload** — maximum isolation
 - All IPC is typed via `contextBridge.exposeInMainWorld`
+- `inject.js` and `inject.css` are **not currently injected** into the BrowserView — the files exist but main.js has no code that loads them
 
 ### Key state (module-level in main.js)
 
 ```js
-store          // electron-store — all persistent settings
-haWsManager    // { ws, reconnectTimer, isConnected } — HA WebSocket connection
+store             // electron-store — all persistent settings
+haWsManager       // { ws, reconnectTimer, isConnected } — HA WebSocket connection
 smartConnectState // { healthIntervalMs: 300000, cooldownMs: 120000, ... }
 sensorDeliveryState // queue + retry for failed sensor POSTs
-appLogBuffer   // last 300 log entries (shown in Preferences → Advanced)
-mainWindow     // BrowserWindow ref
-view           // BrowserView ref (the HA dashboard)
-tray           // Tray ref
+sensorGeneration  // incremented on every startSensorReporting() call — guards against duplicate loops
+appLogBuffer      // last 300 log entries (shown in Preferences → Advanced)
+mainWindow        // BrowserWindow ref
+view              // BrowserView ref (the HA dashboard)
+tray              // Tray ref
 ```
 
 ---
@@ -165,10 +166,10 @@ request.on('response', (response) => {
     response.on('error', () => resolve({ ok: false }));
 });
 ```
-This was the root cause of the OOM crash fixed in v1.0.27. Never skip it.
+This was the root cause of the OOM crash fixed in v1.0.27. Never skip it — including fire-and-forget calls like `sendMediaService`.
 
 ### No innerHTML in injected scripts
-`inject.js` runs inside the HA page. Use DOM API only (`createElement`, `setAttribute`, `textContent`). Never use `innerHTML` — XSS risk.
+If `inject.js` is ever wired up to run inside the HA page again, use DOM API only (`createElement`, `setAttribute`, `textContent`). Never use `innerHTML` — XSS risk.
 
 ### execFile over exec for external commands
 Use `execFile('osascript', ['-e', script])` not `exec(\`osascript -e ${script}\`)`. Template literals in exec = command injection.
@@ -184,6 +185,16 @@ Before registering any `ipcRenderer.on(channel, ...)`, call `ipcRenderer.removeA
 
 ### updateTrayMenu() after any server change
 After `switchToServer()` or `save-servers`, always call `updateTrayMenu()` to rebuild the tray context menu with the new radio state.
+
+### Sensor tick loop — generation counter
+`startSensorReporting()` is called at startup and again on every `save-settings`. The module-level `sensorGeneration` counter is incremented on each call. Every `tick` closure captures its generation at creation time and checks `sensorGeneration !== generation` before rescheduling. Never remove this guard — without it, each `save-settings` creates a parallel tick loop that can't be stopped.
+
+### Linux ozone-platform — X11 vs Wayland
+At startup, check `process.env.WAYLAND_DISPLAY` before applying Chromium flags:
+- Wayland session → `ozone-platform-hint=auto` + `WaylandWindowDecorations`
+- X11 session → `ozone-platform=x11` (explicit, no auto-probe)
+
+`ozone-platform-hint=auto` on an X11 session causes Chromium to probe both backends and accumulate GPU framebuffer memory over time — was root cause of the 31 GB system RAM fill on Linux Mint Cinnamon (issue #5, v1.0.29).
 
 ---
 
@@ -232,7 +243,7 @@ Failed sensor POSTs go into `sensorDeliveryState.queue` (max 1000 items). A `set
 | DND | PowerShell (Focus Assist registry) | AppleScript | — |
 | Mic/Camera | PowerShell | lsof / AppleScript | — |
 | Battery | PowerShell WMI | pmset | /sys/class/power_supply |
-| Wayland | — | — | ozone-platform-hint=auto |
+| Wayland | — | — | auto-detected via WAYLAND_DISPLAY |
 
 ---
 
@@ -246,9 +257,11 @@ To add a language: add a key in `translations.json` and an `<option>` in `index.
 ## What NOT to do
 
 - Never add `[skip ci]` to a code commit — releases must be built
-- Never use `innerHTML` in `inject.js`
+- Never use `innerHTML` in any script injected into the HA page
 - Never call `exec()` with template-literal user input — use `execFile`
-- Never forget to drain response bodies in `net.request` handlers
+- Never forget to drain response bodies in `net.request` handlers (including fire-and-forget POSTs)
 - Never amend or force-push `main` — CI tags commits, force-push breaks the release graph
 - Never store the API token in electron-store — use `getApiToken()` / `setApiToken()` (keytar)
 - Never batch unrelated features in one commit if they affect separate concerns
+- Never remove the `sensorGeneration` check from the sensor tick loop — it prevents duplicate parallel loops
+- Never apply `ozone-platform-hint=auto` unconditionally on Linux — always check `WAYLAND_DISPLAY` first

@@ -4,6 +4,17 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [1.0.30] — 2026-05-20
+
+### Fixed
+- **Linux OOM / whole-system RAM fill** — `ozone-platform-hint=auto` was applied unconditionally on Linux, including on X11 sessions (Cinnamon, GNOME-X, KDE-X). On X11, Chromium probes both the Wayland and X11 backends and accumulates GPU framebuffer memory across the GPU process lifetime — root cause of the 31 GB fill reported in [issue #5](https://github.com/nexos20lv/Home-Assistant-Desktop/issues/5). Fix: detect `WAYLAND_DISPLAY` at startup; use `ozone-platform=x11` on X11 sessions and keep `ozone-platform-hint=auto` + `WaylandWindowDecorations` only on Wayland. Also added `--disable-gpu-memory-buffer-video-frames` to cap GPU process memory from HA camera / video streams.
+- **`sendMediaService` socket leak** — the `net.request` for media key calls (play/pause, next, previous) had no `response` handler, so the response body was never drained and the socket was never released. Added `response.on('data')` + `on('end')` drain (same pattern as `postSensor`).
+- **Duplicate sensor tick loops** — `startSensorReporting()` is called at startup and again on every `save-settings` invocation. `clearTimeout(sensorTickTimer)` only cancels the *next scheduled* tick, not a tick that is currently mid-execution. A mid-flight tick would complete, reschedule itself, and run in parallel with the new tick loop — multiplying sensor POST traffic with each preferences save. Fixed with a generation counter: superseded ticks detect the mismatch and exit without rescheduling.
+- **`inject.js` innerHTML** — title bar element was built with `innerHTML`; replaced with `createElement` + `textContent`.
+- **`syncTheme` no-op** — `isDark` appeared as a bare JS identifier in the injected string instead of an interpolated value (`${isDark}`), causing a silent `ReferenceError` in the renderer. Theme attribute is now correctly set on `<html>`.
+
+---
+
 ## [1.0.29] — 2026-05-19
 
 ### Changed
