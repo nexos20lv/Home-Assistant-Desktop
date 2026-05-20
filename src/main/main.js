@@ -100,6 +100,7 @@ let view;
 let tray;
 let isQuiting = false;
 let sensorTickTimer;
+let sensorGeneration = 0;
 let lastSensorReportAt = 0;
 // Handle Squirrel Startup (to avoid multiple instances)
 if (require('electron-squirrel-startup')) {
@@ -139,8 +140,16 @@ if (process.argv.includes('--quit')) {
 }
 
 if (process.platform === 'linux') {
-    app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
-    app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+    if (process.env.WAYLAND_DISPLAY) {
+        app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
+        app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+    } else {
+        // X11 session (e.g. GNOME/Cinnamon/KDE on X): pin to x11 backend.
+        // ozone-platform-hint=auto on X11 causes Chromium to probe both backends
+        // and can accumulate GPU memory across the GPU process lifetime.
+        app.commandLine.appendSwitch('ozone-platform', 'x11');
+    }
+    app.commandLine.appendSwitch('disable-gpu-memory-buffer-video-frames');
 }
 
 
@@ -637,15 +646,9 @@ function createMainWindow() {
     // Dark Mode Sync
     const syncTheme = () => {
         const isDark = nativeTheme.shouldUseDarkColors;
-        view.webContents.executeJavaScript(`
-            if (document.querySelector('home-assistant')) {
-                const ha = document.querySelector('home-assistant');
-                if (ha.saveTokens) {
-                    // Force HA theme if possible, or just let it react to (prefers-color-scheme)
-                    console.log('Syncing theme with OS: ' + (isDark ? 'dark' : 'light'));
-                }
-            }
-        `);
+        view.webContents.executeJavaScript(
+            `document.documentElement.setAttribute('data-prefers-color-scheme', '${isDark ? 'dark' : 'light'}');`
+        ).catch(() => {});
     };
 
     nativeTheme.on('updated', syncTheme);
@@ -681,6 +684,11 @@ function createMainWindow() {
             }
         });
 
+        request.on('response', (response) => {
+            response.on('data', () => {});
+            response.on('end', () => {});
+            response.on('error', () => {});
+        });
         request.on('error', (error) => {
             addAppLog('warn', `Media key call failed (${service})`, error.message);
         });
@@ -1358,6 +1366,7 @@ async function reportSensor(baseUrl, token, entityId, data) {
 
 function startSensorReporting() {
     if (sensorTickTimer) clearTimeout(sensorTickTimer);
+    const generation = ++sensorGeneration;
 
     let uniqueId = 'unknown_pc';
     try {
@@ -1376,18 +1385,19 @@ function startSensorReporting() {
     let previousCpuInfo = getCpuInfo();
 
     const tick = async () => {
+        if (sensorGeneration !== generation) return;
         try {
             const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
             const apiToken = await getApiToken();
             if (!haUrl || !apiToken) {
-                sensorTickTimer = setTimeout(tick, 30000);
+                if (sensorGeneration === generation) sensorTickTimer = setTimeout(tick, 30000);
                 return;
             }
 
             const effectiveInterval = await getEffectiveSensorIntervalMs();
             const enoughTimeElapsed = (Date.now() - lastSensorReportAt) >= effectiveInterval;
             if (!enoughTimeElapsed) {
-                sensorTickTimer = setTimeout(tick, 30000);
+                if (sensorGeneration === generation) sensorTickTimer = setTimeout(tick, 30000);
                 return;
             }
 
@@ -1505,7 +1515,7 @@ function startSensorReporting() {
         } catch (error) {
             addAppLog('error', 'Sensor reporting tick failed', error.message);
         } finally {
-            sensorTickTimer = setTimeout(tick, 30000);
+            if (sensorGeneration === generation) sensorTickTimer = setTimeout(tick, 30000);
         }
     };
 

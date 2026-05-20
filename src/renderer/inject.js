@@ -81,7 +81,9 @@ const createTitleBar = () => {
 
     const bar = document.createElement('div');
     bar.id = 'ha-desktop-titlebar';
-    bar.innerHTML = '<span>Home Assistant Desktop</span>';
+    const barLabel = document.createElement('span');
+    barLabel.textContent = 'Home Assistant Desktop';
+    bar.appendChild(barLabel);
     document.body.prepend(bar);
 };
 
