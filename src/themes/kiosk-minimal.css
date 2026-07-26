@@ -1,0 +1,14 @@
+/* 
+  Theme: Kiosk Minimal Mode
+  Description: Hides top header and sidebars for clean touchscreen / monitor displays
+*/
+
+#drawer-toggle,
+app-header,
+.header {
+    display: none !important;
+}
+
+ha-app-layout {
+    padding-top: 0 !important;
+}

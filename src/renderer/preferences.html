@@ -576,11 +576,19 @@
                 </div>
 
                 <div class="setting-row vertical">
-                    <div class="setting-info">
-                        <h3>Dashboard CSS</h3>
-                        <p>Inject user styles directly into the Home Assistant UI.</p>
+                    <div class="setting-info" style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <h3>Dashboard CSS & Theme Presets</h3>
+                            <p>Select a scanned theme from <code>src/themes/</code> or drop custom <code>.css</code> files into your user themes folder.</p>
+                        </div>
+                        <button id="open-themes-folder-btn" type="button" style="background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px;">📂 Open Themes Folder</button>
                     </div>
-                    <textarea id="custom-css" style="height: 125px; font-family: monospace;" placeholder=".sidebar { background: transparent; }"></textarea>
+                    <div style="display: flex; gap: 10px; margin-top: 6px;">
+                        <select id="theme-preset-select" style="flex: 1;">
+                            <option value="">Select a Scanned Theme Preset...</option>
+                        </select>
+                    </div>
+                    <textarea id="custom-css" style="height: 125px; font-family: monospace; margin-top: 8px;" placeholder="/* Select a preset above or write custom CSS */"></textarea>
                 </div>
 
                 <div class="setting-row">
@@ -706,6 +714,34 @@
                 document.getElementById('shell-theme').value = settings.shellTheme || 'system';
                 document.getElementById('startup-path').value = settings.startupPath || '';
                 document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
+
+                // Scan and populate CSS themes from src/themes/ and user appData themes directory
+                if (window.prefsAPI && window.prefsAPI.getAvailableThemes) {
+                    const availableThemes = await window.prefsAPI.getAvailableThemes();
+                    const themeSelect = document.getElementById('theme-preset-select');
+                    themeSelect.innerHTML = '<option value="">-- Select a Scanned Theme Preset --</option>';
+                    availableThemes.forEach(theme => {
+                        const opt = document.createElement('option');
+                        opt.value = theme.id;
+                        opt.textContent = theme.name;
+                        themeSelect.appendChild(opt);
+                    });
+
+                    themeSelect.addEventListener('change', (e) => {
+                        const selectedId = e.target.value;
+                        const found = availableThemes.find(t => t.id === selectedId);
+                        if (found) {
+                            document.getElementById('custom-css').value = found.content;
+                        }
+                    });
+                }
+
+                document.getElementById('open-themes-folder-btn').addEventListener('click', async () => {
+                    if (window.prefsAPI && window.prefsAPI.getUserThemesPath) {
+                        const folderPath = await window.prefsAPI.getUserThemesPath();
+                        window.prefsAPI.openExternal(`file://${folderPath}`);
+                    }
+                });
 
                 const logs = await window.prefsAPI.getErrorLogs();
                 const logText = logs.length

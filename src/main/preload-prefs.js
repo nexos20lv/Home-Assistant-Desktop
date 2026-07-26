@@ -7,5 +7,7 @@ contextBridge.exposeInMainWorld('prefsAPI', {
     exportErrorLogs: () => ipcRenderer.invoke('export-error-logs'),
     openExternal: (url) => ipcRenderer.send('open-external', url),
     getServers: () => ipcRenderer.invoke('get-servers'),
-    saveServers: (data) => ipcRenderer.invoke('save-servers', data)
+    saveServers: (data) => ipcRenderer.invoke('save-servers', data),
+    getAvailableThemes: () => ipcRenderer.invoke('get-available-themes'),
+    getUserThemesPath: () => ipcRenderer.invoke('get-user-themes-path')
 });

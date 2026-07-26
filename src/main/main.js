@@ -1742,3 +1742,58 @@ ipcMain.on('open-external', (event, url) => {
     }
 });
 
+// ─── Theme Directory Scanner Engine ──────────────────────────────────────────
+
+function scanThemes() {
+    const themes = [];
+    const builtInDir = path.join(__dirname, '../themes');
+    const userDir = path.join(app.getPath('userData'), 'themes');
+
+    if (!fs.existsSync(userDir)) {
+        try { fs.mkdirSync(userDir, { recursive: true }); } catch (_) {}
+    }
+
+    const readThemeDir = (dirPath, isUserCustom = false) => {
+        if (!fs.existsSync(dirPath)) return;
+        try {
+            const files = fs.readdirSync(dirPath);
+            for (const file of files) {
+                if (file.endsWith('.css')) {
+                    const filePath = path.join(dirPath, file);
+                    const content = fs.readFileSync(filePath, 'utf8');
+                    const titleMatch = content.match(/Theme:\s*(.+)/i);
+                    const rawName = titleMatch ? titleMatch[1].trim() : file.replace('.css', '').replace(/[-_]/g, ' ');
+                    const displayName = (isUserCustom ? '👤 ' : '🎨 ') + rawName;
+                    themes.push({
+                        id: file,
+                        name: displayName,
+                        file,
+                        content,
+                        isUserCustom,
+                        path: filePath
+                    });
+                }
+            }
+        } catch (e) {
+            addAppLog('warn', `Failed reading theme directory ${dirPath}`, e.message);
+        }
+    };
+
+    readThemeDir(builtInDir, false);
+    readThemeDir(userDir, true);
+
+    return themes;
+}
+
+ipcMain.handle('get-available-themes', () => {
+    return scanThemes();
+});
+
+ipcMain.handle('get-user-themes-path', () => {
+    const userDir = path.join(app.getPath('userData'), 'themes');
+    if (!fs.existsSync(userDir)) {
+        try { fs.mkdirSync(userDir, { recursive: true }); } catch (_) {}
+    }
+    return userDir;
+});
+

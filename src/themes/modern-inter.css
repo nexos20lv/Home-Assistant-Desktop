@@ -1,0 +1,10 @@
+/* 
+  Theme: Modern Inter Typography
+  Description: Replaces default fonts with clean Inter typography
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+body, home-assistant, ha-card, .card-header {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
