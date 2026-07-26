@@ -1642,5 +1642,8 @@ ipcMain.handle('export-error-logs', async () => {
 });
 
 ipcMain.on('open-external', (event, url) => {
-    shell.openExternal(url);
+    if (typeof url === 'string' && (url.startsWith('http:') || url.startsWith('https:') || url.startsWith('mailto:'))) {
+        shell.openExternal(url);
+    }
 });
+
