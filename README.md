@@ -151,6 +151,7 @@ Once configured with a **Long-Lived Access Token**, the app automatically create
 Detailed documentation for advanced setup is available in our **[docs/](docs/)** folder:
 
 - 📖 **[User Guide](USER_GUIDE.md)** — Complete getting started walkthrough
+- 🎨 **[Custom Themes & CSS Guide](docs/Custom-Themes.md)** — Create custom themes, glassmorphism, and dashboard CSS
 - 🔌 **[Sensors Setup](docs/Sensors.md)** — Configuring Long-Lived Tokens and sensor polling
 - ⚡ **[Smart Connect & Failover](docs/Smart-Connect.md)** — Setting up local vs remote switching
 - 🗄️ **[Multi-Server Profiles](docs/Multi-Server.md)** — Managing multiple Home Assistant instances
