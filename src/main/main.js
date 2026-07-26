@@ -625,7 +625,8 @@ function createMainWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            partition: 'persist:homeassistant' // Critical for saving login session
+            partition: 'persist:homeassistant', // Critical for saving login session
+            backgroundThrottling: true
         }
     });
 
@@ -764,6 +765,27 @@ function createMainWindow() {
     mainWindow.on('maximize', () => store.set('windowMaximized', true));
     mainWindow.on('unmaximize', () => { store.set('windowMaximized', false); store.set('windowBounds', mainWindow.getBounds()); });
 
+    // Battery Power Saver & Background Throttling for WebView when hidden to tray or minimized
+    const applyBackgroundThrottling = (isThrottled) => {
+        if (view && view.webContents && !view.webContents.isDestroyed()) {
+            view.webContents.setBackgroundThrottling(isThrottled);
+        }
+    };
+
+    mainWindow.on('hide', () => applyBackgroundThrottling(true));
+    mainWindow.on('minimize', () => applyBackgroundThrottling(true));
+    mainWindow.on('show', () => {
+        const powerSaver = store.get('powerSaverMode', false);
+        if (!powerSaver) {
+            applyBackgroundThrottling(false);
+        }
+    });
+    mainWindow.on('restore', () => {
+        const powerSaver = store.get('powerSaverMode', false);
+        if (!powerSaver) {
+            applyBackgroundThrottling(false);
+        }
+    });
 
     mainWindow.on('close', function (event) {
         if (!isQuiting) {
