@@ -8,6 +8,39 @@ body {
     user-select: none;
 }
 
+/* Glassmorphic & Color Themes */
+body.theme-frosted #titlebar {
+    background: rgba(15, 23, 42, 0.55) !important;
+    backdrop-filter: blur(28px) saturate(200%) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+
+body.theme-oled #titlebar {
+    background: #000000 !important;
+    backdrop-filter: none !important;
+    border-bottom: 1px solid #1f1f1f !important;
+}
+
+body.theme-light #titlebar {
+    background: rgba(248, 250, 252, 0.95) !important;
+    color: #0f172a !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+body.theme-light .app-title {
+    color: #0f172a !important;
+}
+
+body.theme-light .app-actions button {
+    color: rgba(15, 23, 42, 0.7) !important;
+}
+
+body.theme-light .app-actions button:hover {
+    background: rgba(15, 23, 42, 0.08) !important;
+    color: #0284c7 !important;
+}
+
 #titlebar {
     height: 40px;
     background: rgba(15, 23, 42, 0.92);

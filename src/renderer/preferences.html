@@ -396,6 +396,20 @@
                       </select>
                   </div>
 
+                  <div class="setting-row vertical">
+                      <div class="setting-info">
+                          <h3>Shell Theme & Glassmorphism</h3>
+                          <p>Customize the window top bar visual style and frosted glass effects.</p>
+                      </div>
+                      <select id="shell-theme">
+                          <option value="system">System Default</option>
+                          <option value="frosted">❄️ Frosted Glass (Vibrancy / Acrylic)</option>
+                          <option value="oled">🌑 OLED Pure Black</option>
+                          <option value="dark">🌙 Dark Mode</option>
+                          <option value="light">☀️ Light Mode</option>
+                      </select>
+                  </div>
+
                   <div class="setting-row">
                       <div class="setting-info">
                           <h3>Launch on Startup</h3>
@@ -689,6 +703,7 @@
                 document.getElementById('power-saver-mode').checked = !!settings.powerSaverMode;
                 document.getElementById('startup-scripts-safe-mode').checked = settings.startupScriptsSafeMode !== false;
                 document.getElementById('display-scale').value = String(settings.displayScale || 100);
+                document.getElementById('shell-theme').value = settings.shellTheme || 'system';
                 document.getElementById('startup-path').value = settings.startupPath || '';
                 document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
 
@@ -725,6 +740,7 @@
                 powerSaverMode: document.getElementById('power-saver-mode').checked,
                 startupScriptsSafeMode: document.getElementById('startup-scripts-safe-mode').checked,
                 displayScale: Number(document.getElementById('display-scale').value),
+                shellTheme: document.getElementById('shell-theme').value,
                 startupPath: document.getElementById('startup-path').value.trim()
             };
 

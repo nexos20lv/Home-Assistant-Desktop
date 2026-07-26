@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Controls Widget</title>
+    <link rel="stylesheet" href="widget.css">
+</head>
+<body>
+    <div class="widget-container">
+        <div class="widget-header">
+            <div class="widget-title">
+                <img src="../assets/logo.svg" alt="HA" class="widget-logo">
+                <span>Quick Controls</span>
+            </div>
+            <div class="widget-actions">
+                <button id="close-widget-btn" title="Close Widget">&times;</button>
+            </div>
+        </div>
+
+        <div class="widget-grid">
+            <div class="widget-tile" id="tile-lights">
+                <div class="tile-icon">💡</div>
+                <div class="tile-info">
+                    <div class="tile-label">Lights</div>
+                    <div class="tile-status" id="lights-status">Toggle</div>
+                </div>
+            </div>
+
+            <div class="widget-tile" id="tile-lock">
+                <div class="tile-icon">🔒</div>
+                <div class="tile-info">
+                    <div class="tile-label">Security</div>
+                    <div class="tile-status" id="lock-status">Armed</div>
+                </div>
+            </div>
+
+            <div class="widget-tile" id="tile-climate">
+                <div class="tile-icon">🌡️</div>
+                <div class="tile-info">
+                    <div class="tile-label">Climate</div>
+                    <div class="tile-status" id="climate-status">21°C Auto</div>
+                </div>
+            </div>
+
+            <div class="widget-tile" id="tile-media">
+                <div class="tile-icon">🎵</div>
+                <div class="tile-info">
+                    <div class="tile-label">Media</div>
+                    <div class="tile-status" id="media-status">Play / Pause</div>
+                </div>
+            </div>
+
+            <div class="widget-tile" id="tile-scene">
+                <div class="tile-icon">⚡</div>
+                <div class="tile-info">
+                    <div class="tile-label">Quick Scene</div>
+                    <div class="tile-status">Activate</div>
+                </div>
+            </div>
+
+            <div class="widget-tile highlight" id="tile-open-app">
+                <div class="tile-icon">🖥️</div>
+                <div class="tile-info">
+                    <div class="tile-label">Open App</div>
+                    <div class="tile-status">Full Dashboard</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="widget.js"></script>
+</body>
+</html>

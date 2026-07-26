@@ -520,6 +520,7 @@ function updateTrayMenu() {
         : [];
     const contextMenu = Menu.buildFromTemplate([
         { label: t('tray.show'), click: () => mainWindow && mainWindow.show() },
+        { label: '🪟 Quick Controls Widget', click: () => toggleWidgetWindow() },
         { type: 'separator' },
         ...serverItems,
         { label: t('tray.support'), click: () => shell.openExternal('https://buymeacoffee.com/nexos20') },
@@ -619,6 +620,7 @@ function createMainWindow() {
 
     // Load the shell (custom title bar)
     mainWindow.loadFile(path.join(__dirname, '../renderer/shell.html'));
+    mainWindow.webContents.once('did-finish-load', () => applyShellTheme());
 
     // Create BrowserView for Home Assistant Content
     view = new BrowserView({
@@ -1075,6 +1077,7 @@ ipcMain.handle('get-settings', async () => {
         powerSaverMode: store.get('powerSaverMode', false),
         startupScriptsSafeMode: store.get('startupScriptsSafeMode', true),
         displayScale: normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE)),
+        shellTheme: store.get('shellTheme', 'system'),
         startupPath: store.get('startupPath', ''),
         appVersion: app.getVersion()
     };
@@ -1103,7 +1106,10 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('powerSaverMode', !!settings.powerSaverMode);
     store.set('startupScriptsSafeMode', settings.startupScriptsSafeMode !== false);
     store.set('displayScale', displayScale);
+    store.set('shellTheme', settings.shellTheme || 'system');
     store.set('startupPath', settings.startupPath || '');
+
+    applyShellTheme(settings.shellTheme || 'system');
 
     if (view && !view.webContents.isDestroyed()) {
         view.webContents.setZoomFactor(displayScale / 100);
@@ -1187,6 +1193,73 @@ ipcMain.on('toggle-pip', () => {
     pipWindow.loadURL(view.webContents.getURL());
     pipWindow.on('closed', () => { pipWindow = null; });
 });
+
+// Quick Controls Floating Desktop Widget
+let widgetWindow = null;
+function toggleWidgetWindow() {
+    if (widgetWindow && !widgetWindow.isDestroyed()) {
+        widgetWindow.close();
+        widgetWindow = null;
+        return;
+    }
+
+    widgetWindow = new BrowserWindow({
+        width: 320,
+        height: 260,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        resizable: false,
+        skipTaskbar: true,
+        webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false
+        }
+    });
+
+    widgetWindow.loadFile(path.join(__dirname, '../renderer/widget.html'));
+    widgetWindow.on('closed', () => { widgetWindow = null; });
+}
+
+ipcMain.on('toggle-widget', () => toggleWidgetWindow());
+
+ipcMain.on('open-main-window', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    }
+});
+
+ipcMain.on('trigger-widget-action', (_event, action) => {
+    addAppLog('info', `Widget action triggered: ${action.type}`);
+    if (action && action.type === 'media') {
+        sendMediaService('media_play_pause');
+    }
+});
+
+function applyShellTheme(theme) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const effectiveTheme = theme || store.get('shellTheme', 'system');
+
+    try {
+        if (process.platform === 'darwin') {
+            if (effectiveTheme === 'frosted') {
+                mainWindow.setVibrancy('under-window');
+            } else {
+                mainWindow.setVibrancy(null);
+            }
+        } else if (process.platform === 'win32') {
+            if (effectiveTheme === 'frosted' && typeof mainWindow.setBackgroundMaterial === 'function') {
+                mainWindow.setBackgroundMaterial('acrylic');
+            }
+        }
+    } catch (_) {}
+
+    if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('shell-theme-changed', effectiveTheme);
+    }
+}
 
 
 function getBatteryInfo() {

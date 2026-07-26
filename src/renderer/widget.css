@@ -1,0 +1,140 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #f8fafc;
+    user-select: none;
+    overflow: hidden;
+}
+
+.widget-container {
+    width: 100vw;
+    height: 100vh;
+    padding: 12px;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+
+.widget-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    -webkit-app-region: drag;
+}
+
+.widget-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: rgba(255, 255, 255, 0.95);
+}
+
+.widget-logo {
+    width: 16px;
+    height: 16px;
+}
+
+.widget-actions {
+    -webkit-app-region: no-drag;
+}
+
+#close-widget-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+#close-widget-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.widget-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    flex: 1;
+    -webkit-app-region: no-drag;
+}
+
+.widget-tile {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.widget-tile:hover {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: rgba(56, 189, 248, 0.4);
+    transform: translateY(-2px);
+}
+
+.widget-tile:active {
+    transform: translateY(0) scale(0.98);
+}
+
+.widget-tile.highlight {
+    background: linear-gradient(135deg, rgba(138, 43, 226, 0.25), rgba(56, 189, 248, 0.25));
+    border-color: rgba(168, 85, 247, 0.4);
+}
+
+.widget-tile.highlight:hover {
+    background: linear-gradient(135deg, rgba(138, 43, 226, 0.4), rgba(56, 189, 248, 0.4));
+}
+
+.tile-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.tile-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.tile-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.tile-status {
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
