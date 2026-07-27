@@ -1,0 +1,34 @@
+name: 🐛 Bug Report
+description: Signaler un bug ou un dysfonctionnement
+title: "[BUG]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Merci de remplir ce formulaire pour nous aider à corriger le problème au plus vite !
+  - type: textarea
+    id: description
+    attributes:
+      label: Description du bug
+      description: Une description claire et concise du problème rencontré.
+      placeholder: Quel est le problème ?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Étapes pour reproduire
+      description: Comment peut-on reproduire le bug ?
+      placeholder: |
+        1. Aller sur '...'
+        2. Clic sur '....'
+        3. Observer l'erreur...
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Système d'exploitation & Version
+      placeholder: Windows 11 / macOS Sonoma / Ubuntu 22.04
+    validations:
+      required: true
