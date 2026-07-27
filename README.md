@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=8A2BE2&height=200&section=header&text=Home%20Assistant%20Desktop&fontSize=42&fontAlignY=40&animation=twinkling&desc=A%20native,%20OS-integrated%20desktop%20client&descAlignY=60&descAlign=50&fontColor=ffffff" alt="Home Assistant Desktop Banner" />
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=8A2BE2&height=200&section=header&text=Home%20Assistant%20Desktop&fontSize=42&fontAlignY=40&animation=twinkling&desc=A%20native,%20OS-integrated%20desktop%20client&descAlignY=60&descAlign=50" alt="Home Assistant Desktop Banner" />
 
   <p align="center">
     <a href="https://github.com/nexos20lv/Home-Assistant-Desktop/releases/latest">
