@@ -1,0 +1,22 @@
+name: 💡 Demande de Fonctionnalité (Feature Request)
+description: Suggérer une nouvelle idée ou une amélioration
+title: "[FEATURE]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Vous avez une idée pour améliorer le projet ? Proposez-la ci-dessous !
+  - type: textarea
+    id: problem
+    attributes:
+      label: Votre besoin / Problème résolu
+      description: À quel besoin ou problème cette fonctionnalité répond-elle ?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solution proposée
+      description: Décrivez clairement la fonctionnalité que vous aimeriez voir.
+    validations:
+      required: true
