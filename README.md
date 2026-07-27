@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=8A2BE2&height=200&section=header&text=Home%20Assistant%20Desktop&fontSize=42&fontAlignY=40&animation=twinkling&desc=A%20native,%20OS-integrated%20desktop%20client&descAlignY=60&descAlign=50" alt="Home Assistant Desktop Banner" />
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=8A2BE2&height=200&section=header&text=Home%20Assistant%20Desktop&fontSize=42&fontAlignY=40&animation=twinkling&desc=A%20native,%20OS-integrated%20desktop%20client&descAlignY=60&descAlign=50&fontColor=ffffff" alt="Home Assistant Desktop Banner" />
 
   <p align="center">
     <a href="https://github.com/nexos20lv/Home-Assistant-Desktop/releases/latest">
@@ -165,7 +165,7 @@ If **Home Assistant Desktop** enhances your daily workflow or smart home setup, 
 
 <div align="center">
   <a href="https://buymeacoffee.com/nexos20">
-    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate%20%E2%98%95-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee">
+    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate%20%E2%98%95-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white" alt="Buy Me A Coffee">
   </a>
 </div>
 
