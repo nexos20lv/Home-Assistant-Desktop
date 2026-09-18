@@ -139,6 +139,26 @@ if (process.argv.includes('--quit')) {
     app.quit();
 }
 
+if (!store.get('hardwareAcceleration', true)) {
+    app.disableHardwareAcceleration();
+}
+
+app.on('render-process-gone', (event, webContents, details) => {
+    addAppLog('error', 'Render process gone', details.reason);
+    if (details.reason === 'crashed' || details.reason === 'oom') {
+        app.quit();
+        app.exit(1);
+    }
+});
+
+app.on('child-process-gone', (event, details) => {
+    addAppLog('error', 'Child process gone', details.reason);
+    if (details.reason === 'crashed' || details.reason === 'oom') {
+        app.quit();
+        app.exit(1);
+    }
+});
+
 if (process.platform === 'linux') {
     if (process.env.WAYLAND_DISPLAY) {
         app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations');
@@ -1079,6 +1099,7 @@ ipcMain.handle('get-settings', async () => {
         displayScale: normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE)),
         shellTheme: store.get('shellTheme', 'system'),
         startupPath: store.get('startupPath', ''),
+        hardwareAcceleration: store.get('hardwareAcceleration', true),
         appVersion: app.getVersion()
     };
 });
@@ -1108,6 +1129,7 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('displayScale', displayScale);
     store.set('shellTheme', settings.shellTheme || 'system');
     store.set('startupPath', settings.startupPath || '');
+    store.set('hardwareAcceleration', settings.hardwareAcceleration !== false);
 
     applyShellTheme(settings.shellTheme || 'system');
 

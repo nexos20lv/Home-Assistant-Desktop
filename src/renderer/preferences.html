@@ -412,6 +412,17 @@
 
                   <div class="setting-row">
                       <div class="setting-info">
+                          <h3>Hardware Acceleration</h3>
+                          <p>Turn off to fix freezing/crashing with video streams (requires restart).</p>
+                      </div>
+                      <label class="switch">
+                          <input type="checkbox" id="hardware-acceleration" checked>
+                          <span class="slider"></span>
+                      </label>
+                  </div>
+
+                  <div class="setting-row">
+                      <div class="setting-info">
                           <h3>Launch on Startup</h3>
                           <p>Start Home Assistant automatically when you log in.</p>
                       </div>
@@ -713,6 +724,7 @@
                 document.getElementById('display-scale').value = String(settings.displayScale || 100);
                 document.getElementById('shell-theme').value = settings.shellTheme || 'system';
                 document.getElementById('startup-path').value = settings.startupPath || '';
+                document.getElementById('hardware-acceleration').checked = settings.hardwareAcceleration !== false;
                 document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
 
                 // Scan and populate CSS themes from src/themes/ and user appData themes directory
@@ -777,7 +789,8 @@
                 startupScriptsSafeMode: document.getElementById('startup-scripts-safe-mode').checked,
                 displayScale: Number(document.getElementById('display-scale').value),
                 shellTheme: document.getElementById('shell-theme').value,
-                startupPath: document.getElementById('startup-path').value.trim()
+                startupPath: document.getElementById('startup-path').value.trim(),
+                hardwareAcceleration: document.getElementById('hardware-acceleration').checked
             };
 
             await window.prefsAPI.saveSettings(settings);
