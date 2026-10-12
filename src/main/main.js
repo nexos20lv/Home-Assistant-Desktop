@@ -54,7 +54,8 @@ function loadTranslations() {
         translations = JSON.parse(data);
         
         // Get system language or saved preference
-        const savedLang = store.get('app-language');
+        let savedLang = store.get('app-language');
+        if (savedLang === 'iw' || savedLang === 'heb') savedLang = 'he';
         if (savedLang && translations[savedLang]) {
             currentLanguage = savedLang;
         } else {
@@ -68,6 +69,7 @@ function loadTranslations() {
                 const envLang = process.env.LANG || process.env.LC_ALL || process.env.LANGUAGE || '';
                 systemLang = envLang.split('_')[0].toLowerCase() || 'en';
             }
+            if (systemLang === 'iw' || systemLang === 'heb') systemLang = 'he';
             currentLanguage = (systemLang && translations[systemLang]) ? systemLang : 'en';
         }
     } catch (e) {

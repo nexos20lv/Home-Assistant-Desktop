@@ -15,14 +15,17 @@ class I18n {
      */
     detectLanguage() {
         // Check for saved preference
-        const savedLang = localStorage.getItem('app-language');
+        const savedLang = typeof localStorage !== 'undefined' ? localStorage.getItem('app-language') : null;
         if (savedLang) return savedLang;
 
         // Get browser/system language
-        const browserLang = navigator.language?.split('-')[0] || navigator.userLanguage?.split('-')[0];
+        let browserLang = typeof navigator !== 'undefined'
+            ? (navigator.language?.split('-')[0] || navigator.userLanguage?.split('-')[0])
+            : 'en';
+        if (browserLang === 'iw' || browserLang === 'heb') browserLang = 'he';
         
         // Map browser language to supported language
-        const supportedLanguages = ['en', 'fr', 'es', 'de', 'it', 'pt', 'nl'];
+        const supportedLanguages = ['en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'he'];
         return supportedLanguages.includes(browserLang) ? browserLang : 'en';
     }
 
@@ -37,11 +40,16 @@ class I18n {
      * Set language and save preference
      */
     setLanguage(lang) {
+        if (lang === 'iw' || lang === 'heb') lang = 'he';
         if (this.translations[lang]) {
             this.currentLanguage = lang;
-            localStorage.setItem('app-language', lang);
+            if (typeof localStorage !== 'undefined') {
+                localStorage.setItem('app-language', lang);
+            }
             // Trigger language change event for UI updates
-            window.dispatchEvent(new CustomEvent('i18n-language-changed', { detail: { language: lang } }));
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('i18n-language-changed', { detail: { language: lang } }));
+            }
             return true;
         }
         return false;
