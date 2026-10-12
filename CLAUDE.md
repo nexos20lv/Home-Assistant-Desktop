@@ -47,7 +47,7 @@ src/
     inject.js         ← Exists as a file but is NOT loaded/injected anywhere in main.js currently
     inject.css        ← Injected styles (also unused currently)
   locales/
-    translations.json ← All UI strings for 7 languages (en/fr/es/de/it/pt/nl)
+    translations.json ← All UI strings for 8 languages (en/fr/es/de/it/pt/nl/he)
     i18n.js           ← Translation loader used in renderer contexts
   assets/
     logo.png / logo.ico / logo.svg
@@ -249,7 +249,7 @@ Failed sensor POSTs go into `sensorDeliveryState.queue` (max 1000 items). A `set
 
 ## Languages
 
-7 languages in `src/locales/translations.json`: `en`, `fr`, `es`, `de`, `it`, `pt`, `nl`.  
+8 languages in `src/locales/translations.json`: `en`, `fr`, `es`, `de`, `it`, `pt`, `nl`, `he`.  
 To add a language: add a key in `translations.json` and an `<option>` in `index.html` and `preferences.html`.
 
 ---

@@ -7,6 +7,7 @@
       <img src="https://img.shields.io/github/v/release/nexos20lv/Home-Assistant-Desktop?style=for-the-badge&color=34C759" alt="Version">
     </a>
     <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-007AFF?style=for-the-badge" alt="Platform">
+    <img src="https://img.shields.io/badge/Languages-8%20Supported-8A2BE2?style=for-the-badge" alt="Languages">
     <img src="https://img.shields.io/github/downloads/nexos20lv/Home-Assistant-Desktop/total?style=for-the-badge&label=Downloads&color=0A84FF" alt="Downloads">
     <img src="https://img.shields.io/github/actions/workflow/status/nexos20lv/Home-Assistant-Desktop/release.yml?style=for-the-badge&label=Build" alt="Build">
     <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License">
@@ -65,7 +66,7 @@
     <td width="50%" valign="top">
       <h3>🌐 Internationalization & Platform</h3>
       <ul>
-        <li><b>7 Languages Supported:</b> English, French, Spanish, German, Italian, Portuguese, and Dutch.</li>
+        <li><b>8 Languages Supported:</b> English, French, Spanish, German, Italian, Portuguese, Dutch, and Hebrew (עברית).</li>
         <li><b>Wayland & X11 Native:</b> Intelligent display server backend detection for Linux environments.</li>
         <li><b>Tray Integration:</b> Minimize-to-tray support for 24/7 background sensor reporting.</li>
       </ul>

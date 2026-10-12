@@ -44,7 +44,7 @@ Home-Assistant-Desktop/
 │   │   ├── inject.js         # Script injected into the HA BrowserView
 │   │   └── inject.css        # Styles injected into the HA BrowserView
 │   ├── locales/
-│   │   ├── translations.json # All UI strings for 7 languages
+│   │   ├── translations.json # All UI strings for 8 languages
 │   │   └── i18n.js           # Translation loader (used in renderer contexts)
 │   └── assets/
 │       ├── logo.png
