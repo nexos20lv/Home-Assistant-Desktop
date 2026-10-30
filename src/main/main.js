@@ -1225,11 +1225,17 @@ function toggleWidgetWindow() {
         resizable: false,
         skipTaskbar: true,
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            // The widget only needs three IPC messages, not Node: a preload exposes just those.
+            preload: path.join(__dirname, 'preload-widget.js'),
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true
         }
     });
 
+    // It only ever shows its own page: no navigating away (e.g. a link dropped on it), no popups.
+    widgetWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+    widgetWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     widgetWindow.loadFile(path.join(__dirname, '../renderer/widget.html'));
     widgetWindow.on('closed', () => { widgetWindow = null; });
 }

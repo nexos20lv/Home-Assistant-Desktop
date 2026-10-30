@@ -37,6 +37,7 @@ src/
     main.js           ← Electron main process (~1600 lines). ALL app logic lives here.
     preload.js        ← contextBridge for shell.html (IPC to main)
     preload-prefs.js  ← contextBridge for preferences.html (IPC to main)
+    preload-widget.js ← contextBridge for widget.html: close, open main window, widget actions
   renderer/
     shell.html        ← Custom title bar (always shown above the HA BrowserView)
     shell.css         ← Title bar styles
