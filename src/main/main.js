@@ -2064,7 +2064,19 @@ ipcMain.handle('test-ha-connection', async (_event, payload) => {
     return testHaConnection(payload ? payload.url : '', token);
 });
 
-ipcMain.handle('reset-config', () => {
+ipcMain.handle('reset-config', async (event) => {
+    // The button sits next to Preferences; one stray tap shouldn't wipe the connection.
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+        type: 'warning',
+        buttons: [t('shell.cancel'), t('shell.disconnectButton')],
+        defaultId: 0,
+        cancelId: 0,
+        message: t('shell.disconnectConfirm'),
+        detail: t('shell.disconnectConfirmDetail')
+    };
+    const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+    if (response !== 1) return false;
     store.delete('haUrl');
     app.relaunch();
     app.exit(0);
