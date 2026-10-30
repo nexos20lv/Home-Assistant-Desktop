@@ -881,26 +881,39 @@
         let _servers = [];
         let _activeServerId = '';
 
+        // Built with DOM APIs: server names and URLs are saved values and must never be parsed as HTML.
         function renderServers() {
             const list = document.getElementById('servers-list');
-            list.innerHTML = '';
+            list.replaceChildren();
+            const make = (tag, props, style) => {
+                const el = document.createElement(tag);
+                Object.assign(el, props);
+                el.style.cssText = style;
+                return el;
+            };
+            const fieldStyle = 'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:white;';
             _servers.forEach((s, i) => {
-                const card = document.createElement('div');
-                card.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;';
-                card.innerHTML = `
-                    <div style="display:flex;align-items:center;gap:10px;">
-                        <input type="radio" name="active-server" value="${s.id}" ${s.id === _activeServerId ? 'checked' : ''} style="accent-color:var(--accent);" title="Set as active">
-                        <input type="text" data-idx="${i}" data-field="name" value="${s.name || ''}" placeholder="Server name" style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:white;font-size:13px;">
-                        <button data-del="${i}" style="background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#ef4444;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">Remove</button>
-                    </div>
-                    <input type="text" data-idx="${i}" data-field="localUrl" value="${s.localUrl || ''}" placeholder="Local URL (http://192.168.1.5:8123)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:white;font-size:12px;font-family:monospace;">
-                    <input type="text" data-idx="${i}" data-field="remoteUrl" value="${s.remoteUrl || ''}" placeholder="Remote URL (optional)" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 10px;color:white;font-size:12px;font-family:monospace;">
-                `;
-                card.querySelectorAll('input[type=text]').forEach(inp => {
-                    inp.addEventListener('input', e => { _servers[e.target.dataset.idx][e.target.dataset.field] = e.target.value; });
+                const field = (key, placeholder, style) => {
+                    const input = make('input', { type: 'text', value: s[key] || '', placeholder }, fieldStyle + style);
+                    input.addEventListener('input', () => { _servers[i][key] = input.value; });
+                    return input;
+                };
+                const radio = make('input', { type: 'radio', name: 'active-server', value: s.id, checked: s.id === _activeServerId, title: 'Set as active' }, 'accent-color:var(--accent);');
+                radio.addEventListener('change', () => { _activeServerId = s.id; });
+                const remove = make('button', { textContent: 'Remove' }, 'background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#ef4444;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;');
+                remove.addEventListener('click', () => {
+                    _servers.splice(i, 1);
+                    if (_activeServerId === s.id && _servers.length) _activeServerId = _servers[0].id;
+                    renderServers();
                 });
-                card.querySelector('input[type=radio]').addEventListener('change', e => { _activeServerId = e.target.value; });
-                card.querySelector('[data-del]').addEventListener('click', e => { _servers.splice(Number(e.target.dataset.del), 1); if (_activeServerId === s.id && _servers.length) _activeServerId = _servers[0].id; renderServers(); });
+                const header = make('div', {}, 'display:flex;align-items:center;gap:10px;');
+                header.append(radio, field('name', 'Server name', 'flex:1;font-size:13px;'), remove);
+                const card = make('div', {}, 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;');
+                card.append(
+                    header,
+                    field('localUrl', 'Local URL (http://192.168.1.5:8123)', 'font-size:12px;font-family:monospace;'),
+                    field('remoteUrl', 'Remote URL (optional)', 'font-size:12px;font-family:monospace;')
+                );
                 list.appendChild(card);
             });
         }

@@ -37,6 +37,7 @@ src/
     main.js           ← Electron main process (~1600 lines). ALL app logic lives here.
     preload.js        ← contextBridge for shell.html (IPC to main)
     preload-prefs.js  ← contextBridge for preferences.html (IPC to main)
+    preload-widget.js ← contextBridge for widget.html: close, open main window, widget actions
   renderer/
     shell.html        ← Custom title bar (always shown above the HA BrowserView)
     shell.css         ← Title bar styles
@@ -175,7 +176,13 @@ If `inject.js` is ever wired up to run inside the HA page again, use DOM API onl
 Use `execFile('osascript', ['-e', script])` not `exec(\`osascript -e ${script}\`)`. Template literals in exec = command injection.
 
 ### windowsHide on all exec() calls
-All `exec()` / `execPromise()` calls on Windows must include `{ windowsHide: true }` to suppress visible console windows.
+All `exec()` calls on Windows must include `{ windowsHide: true }` to suppress visible console windows.
+
+### No generic command-execution IPC
+No IPC channel may run a command, script or path chosen by a renderer. Startup scripts are run by main from the store, behind safe mode. (A `run-script` handler that exec'd any string it was sent existed unused until it was removed.)
+
+### Permissions and popups only for Home Assistant's origins
+`isHomeAssistantUrl()` compares exact origins against every configured URL (local, remote, all server profiles); never use a prefix match. Mic, camera and notifications are only granted to those origins (not to iframe or web page cards), and `guardHomeAssistantPopups()` (main view, PiP and their popups) only opens those origins as app windows; other http(s) links go to the default browser.
 
 ### Deep link origin validation
 `handleDeepLink` must validate that the target URL's origin matches the configured HA URL. Reject cross-origin paths silently.
