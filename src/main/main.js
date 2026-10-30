@@ -845,16 +845,14 @@ function createMainWindow() {
 
 function updateViewBounds() {
     if (!mainWindow || !view) return;
-    const bounds = mainWindow.getBounds();
-    const contentBounds = mainWindow.getContentBounds();
 
-    // Title bar height from shell.css is 32px
+    // Title bar height from shell.css
     const titleBarHeight = 40;
 
-    // We strive to fill the window below the title bar
-    // Note: on Windows with 'hidden' titleBarStyle, getContentBounds might include the title bar area
-    // So we just use the window size and offset top.
-    const [width, height] = mainWindow.getSize();
+    // With the 'hidden' titleBarStyle the content area includes the title bar, so fill it and
+    // offset the top. getSize() would also count the invisible resize borders Windows adds
+    // around a maximized window, pushing the view's right and bottom edges off screen.
+    const [width, height] = mainWindow.getContentSize();
 
     view.setBounds({
         x: 0,
