@@ -47,7 +47,11 @@ body.theme-light .app-actions button:hover {
     backdrop-filter: blur(20px);
     display: flex;
     align-items: center;
-    padding: 0 16px 0 80px; /* 80px left for macOS traffic lights */
+    /* Keep clear of the window controls: on the right on Windows/Linux, the traffic lights on the
+       left on macOS. The titlebar-area-* variables describe the free area; the fallbacks give the
+       old 80px left padding. */
+    padding-left: max(16px, calc(env(titlebar-area-x, 64px) + 16px));
+    padding-right: max(16px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px));
     -webkit-app-region: drag;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     position: relative;
@@ -134,11 +138,7 @@ body.theme-light .gamepad-indicator {
     align-items: center;
     gap: 12px;
     -webkit-app-region: no-drag;
-    margin-right: 8px;
-    position: absolute;
-    right: 130px;
-    top: 50%;
-    transform: translateY(-50%);
+    margin-left: 8px;
     z-index: 2000;
 }
 
@@ -165,4 +165,15 @@ body.theme-light .gamepad-indicator {
 .app-actions button svg {
     width: 18px;
     height: 18px;
+}
+
+/* Bigger tap targets on touch screens */
+@media (pointer: coarse) {
+    .app-actions {
+        gap: 6px;
+    }
+
+    .app-actions button {
+        padding: 9px;
+    }
 }
