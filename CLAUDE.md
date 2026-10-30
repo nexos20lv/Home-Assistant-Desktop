@@ -148,7 +148,7 @@ tray              // Tray ref
 | `globalShortcut` | bool | false | Ctrl+Alt+H toggle |
 | `autoUpdates` | bool | true | update-electron-app |
 | `biometricLock` | bool | false | TouchID / Windows Hello |
-| `mediaPlayerEntity` | string | 'media_player.all' | Media key target |
+| `mediaPlayerEntity` | string | '' | Media key target; media keys are only registered when set (the old default 'media_player.all' counts as unset) |
 | `windowBounds` | object | {w:1200,h:800} | Saved window geometry |
 | `windowMaximized` | bool | false | Restore maximized state |
 | `gamepadNavigation` | bool | true | Controller navigation |

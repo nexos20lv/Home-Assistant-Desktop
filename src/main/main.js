@@ -705,38 +705,7 @@ function createMainWindow() {
     });
 
     // Media Keys Integration
-    const sendMediaService = async (service) => {
-        const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
-        const apiToken = await getApiToken();
-        const entityId = store.get('mediaPlayerEntity', 'media_player.all'); // Fallback or user-defined
-
-        if (!haUrl || !apiToken) return;
-
-        const { net } = require('electron');
-        const request = net.request({
-            method: 'POST',
-            url: `${haUrl}/api/services/media_player/${service}`,
-            headers: {
-                'Authorization': `Bearer ${apiToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        request.on('response', (response) => {
-            response.on('data', () => {});
-            response.on('end', () => {});
-            response.on('error', () => {});
-        });
-        request.on('error', (error) => {
-            addAppLog('warn', `Media key call failed (${service})`, error.message);
-        });
-        request.write(JSON.stringify({ entity_id: entityId }));
-        request.end();
-    };
-
-    globalShortcut.register('MediaPlayPause', () => sendMediaService('media_play_pause'));
-    globalShortcut.register('MediaNextTrack', () => sendMediaService('media_next_track'));
-    globalShortcut.register('MediaPreviousTrack', () => sendMediaService('media_previous_track'));
+    registerMediaKeys();
 
     // Context Menu Implementation
     view.webContents.on('context-menu', (event, params) => {
@@ -854,6 +823,61 @@ function createMainWindow() {
         }
         return { action: 'deny' };
     });
+}
+
+// ─── Media keys ──────────────────────────────────────────────────────────────
+
+const MEDIA_KEYS = {
+    MediaPlayPause: 'media_play_pause',
+    MediaNextTrack: 'media_next_track',
+    MediaPreviousTrack: 'media_previous_track'
+};
+// The old default. It isn't an entity (Home Assistant's keyword is plain "all"), so it never
+// controlled anything; treat it as unset.
+const LEGACY_MEDIA_ENTITY = 'media_player.all';
+
+function getMediaPlayerEntity() {
+    const entity = String(store.get('mediaPlayerEntity', '') || '').trim();
+    return entity === LEGACY_MEDIA_ENTITY ? '' : entity;
+}
+
+async function sendMediaService(service) {
+    const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
+    const apiToken = await getApiToken();
+    const entityId = getMediaPlayerEntity();
+
+    if (!haUrl || !apiToken || !entityId) return;
+
+    const { net } = require('electron');
+    const request = net.request({
+        method: 'POST',
+        url: `${haUrl}/api/services/media_player/${service}`,
+        headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    request.on('response', (response) => {
+        response.on('data', () => {});
+        response.on('end', () => {});
+        response.on('error', () => {});
+    });
+    request.on('error', (error) => {
+        addAppLog('warn', `Media key call failed (${service})`, error.message);
+    });
+    request.write(JSON.stringify({ entity_id: entityId }));
+    request.end();
+}
+
+// Media keys are global shortcuts: while registered, other apps (music players, browsers,
+// headset buttons) stop receiving them. Only take them when a media player is configured.
+function registerMediaKeys() {
+    for (const accelerator of Object.keys(MEDIA_KEYS)) globalShortcut.unregister(accelerator);
+    if (!getMediaPlayerEntity()) return;
+    for (const [accelerator, service] of Object.entries(MEDIA_KEYS)) {
+        globalShortcut.register(accelerator, () => sendMediaService(service));
+    }
 }
 
 function updateViewBounds() {
@@ -1102,7 +1126,7 @@ ipcMain.handle('get-settings', async () => {
         autoLaunch: store.get('autoLaunch', false),
         globalShortcut: store.get('globalShortcut', false),
         autoUpdates: store.get('autoUpdates', true),
-        mediaPlayerEntity: store.get('mediaPlayerEntity', 'media_player.all'),
+        mediaPlayerEntity: getMediaPlayerEntity(),
         customCSS: store.get('customCSS', ''),
         biometricLock: store.get('biometricLock', false),
         startupScripts: store.get('startupScripts', ''),
@@ -1137,7 +1161,7 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('autoLaunch', settings.autoLaunch);
     store.set('globalShortcut', settings.globalShortcut);
     store.set('autoUpdates', settings.autoUpdates);
-    store.set('mediaPlayerEntity', settings.mediaPlayerEntity);
+    store.set('mediaPlayerEntity', String(settings.mediaPlayerEntity || '').trim());
     store.set('customCSS', settings.customCSS);
     store.set('biometricLock', settings.biometricLock);
     store.set('startupScripts', settings.startupScripts);
@@ -1180,8 +1204,9 @@ ipcMain.handle('save-settings', async (_event, settings) => {
         }
     }
 
-    // 2. Global Shortcut
-    globalShortcut.unregisterAll();
+    // 2. Global Shortcuts (only the toggle; unregisterAll() would also drop the media keys)
+    globalShortcut.unregister('CommandOrControl+Alt+H');
+    registerMediaKeys();
     if (settings.globalShortcut) {
         globalShortcut.register('CommandOrControl+Alt+H', () => {
             if (mainWindow) {
