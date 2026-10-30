@@ -737,7 +737,9 @@ function createMainWindow() {
             (permission === 'notifications' && allowNotifications) ||
             (permission === 'audioCapture' && allowMic) ||
             (permission === 'videoCapture' && allowCamera) ||
-            permission === 'media';
+            permission === 'media' ||
+            // Camera and picture cards' own full screen buttons
+            permission === 'fullscreen';
 
         callback(permissionAllowed);
     });
