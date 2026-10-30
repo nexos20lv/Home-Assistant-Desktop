@@ -175,7 +175,10 @@ If `inject.js` is ever wired up to run inside the HA page again, use DOM API onl
 Use `execFile('osascript', ['-e', script])` not `exec(\`osascript -e ${script}\`)`. Template literals in exec = command injection.
 
 ### windowsHide on all exec() calls
-All `exec()` / `execPromise()` calls on Windows must include `{ windowsHide: true }` to suppress visible console windows.
+All `exec()` calls on Windows must include `{ windowsHide: true }` to suppress visible console windows.
+
+### No generic command-execution IPC
+No IPC channel may run a command, script or path chosen by a renderer. Startup scripts are run by main from the store, behind safe mode. (A `run-script` handler that exec'd any string it was sent existed unused until it was removed.)
 
 ### Deep link origin validation
 `handleDeepLink` must validate that the target URL's origin matches the configured HA URL. Reject cross-origin paths silently.

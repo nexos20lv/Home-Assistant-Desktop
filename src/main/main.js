@@ -5,8 +5,6 @@ const fs = require('fs');
 const os = require('os');
 const { exec, execFile } = require('child_process');
 const { machineIdSync } = require('node-machine-id');
-const util = require('util');
-const execPromise = util.promisify(exec);
 let keytar;
 
 try {
@@ -893,15 +891,6 @@ function createSetupWindow() {
         createMainWindow();
     });
 }
-
-ipcMain.handle('run-script', async (event, command) => {
-    try {
-        const { stdout } = await execPromise(command);
-        return { success: true, output: stdout };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-});
 
 const runStartupScripts = async () => {
     const scripts = store.get('startupScripts', '');
