@@ -656,20 +656,21 @@ function createMainWindow() {
         sendGamepadState();
     });
 
+    const displayScale = normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE));
+
     // Create BrowserView for Home Assistant Content
     view = new BrowserView({
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
             partition: 'persist:homeassistant', // Critical for saving login session
-            backgroundThrottling: true
+            backgroundThrottling: true,
+            // Calling setZoomFactor() before the first page load has no effect; this applies from the start.
+            zoomFactor: displayScale / 100
         }
     });
 
     mainWindow.setBrowserView(view);
-
-    const displayScale = normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE));
-    view.webContents.setZoomFactor(displayScale / 100);
 
     view.webContents.on('did-fail-load', (_event, _errorCode, errorDescription, _validatedURL) => {
         addAppLog('warn', 'BrowserView failed to load page', errorDescription);
