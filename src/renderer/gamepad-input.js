@@ -28,9 +28,9 @@
     const STICK_OFF = 0.4;
     const TRIGGER_ON = 0.6;
     const TRIGGER_OFF = 0.35;
-    const SCROLL_DEADZONE = 0.2;
+    const SCROLL_DEADZONE = 0.3; // radial; a resting stick can read up to ~0.27 (XInput's own figure)
     const SCROLL_SPEED = 2200; // px per second at full tilt
-    const IDLE_POLL_MS = 50;
+    const IDLE_POLL_MS = 33; // short enough to catch a quick tap
     const ACTIVE_MS = 1500; // poll every frame for this long after the last input
 
     let enabled = false;
@@ -43,7 +43,9 @@
     let aDownAt = 0;
     let aHeld = false;
     let scrollAt = 0;
+    let scrollRest = { x: 0, y: 0 }; // sub-pixel scrolling carried over to the next frame
     let lastInputAt = 0;
+    let listening = false;
     const triggers = { lt: { on: false, at: 0 }, rt: { on: false, at: 0 } };
 
     const send = (command) => {
@@ -121,26 +123,26 @@
         t.on = on;
     };
 
-    // Scroll speed grows with the square of the tilt, for fine control near the centre.
-    const curve = (value) => {
-        const tilt = Math.abs(value);
-        if (tilt < SCROLL_DEADZONE) return 0;
-        const t = (tilt - SCROLL_DEADZONE) / (1 - SCROLL_DEADZONE);
-        return Math.sign(value) * t * t;
-    };
-
+    // Right stick: a radial dead zone, then speed growing with the square of the tilt for fine
+    // control near the centre.
     const scroll = (s, now) => {
-        const x = curve(s.rx);
-        const y = curve(s.ry);
-        if (!x && !y) {
+        const tilt = Math.min(1, Math.hypot(s.rx, s.ry));
+        if (tilt < SCROLL_DEADZONE) {
             scrollAt = 0;
+            scrollRest = { x: 0, y: 0 };
             return;
         }
         const elapsed = scrollAt ? now - scrollAt : 16;
         if (elapsed < 15) return; // about 60 messages a second, even on a 120 Hz display
         scrollAt = now;
-        const distance = SCROLL_SPEED * Math.min(elapsed, 50) / 1000;
-        send({ type: 'scroll', dx: x * distance, dy: y * distance });
+        const t = (tilt - SCROLL_DEADZONE) / (1 - SCROLL_DEADZONE);
+        const speed = SCROLL_SPEED * t * t * Math.min(elapsed, 50) / 1000;
+        const x = scrollRest.x + (s.rx / tilt) * speed;
+        const y = scrollRest.y + (s.ry / tilt) * speed;
+        const dx = Math.trunc(x);
+        const dy = Math.trunc(y);
+        scrollRest = { x: x - dx, y: y - dy };
+        if (dx || dy) send({ type: 'scroll', dx, dy });
     };
 
     const update = (s, now) => {
@@ -149,8 +151,9 @@
         const pressed = (button) => s.buttons[button] && !was.buttons[button];
         const released = (button) => !s.buttons[button] && was.buttons[button];
 
-        // The D-pad wins over the left stick.
-        const dir = dpadDirection(s) || stickDirection(s);
+        // The D-pad wins over the left stick. Neither moves while A is held, so a press always
+        // lands on what was selected when A went down.
+        const dir = aDownAt ? null : dpadDirection(s) || stickDirection(s);
         if (dir !== (nav ? nav.dir : null)) {
             if (nav && !nav.primed) send({ type: 'navigate', dir: nav.dir, phase: 'release' });
             nav = dir ? { dir, since: now, last: now } : null;
@@ -196,6 +199,7 @@
         }
         const s = read();
         if (!s.connected) {
+            releaseHeld();
             previous = null;
             return; // resumes on gamepadconnected
         }
@@ -211,30 +215,50 @@
         if (!frame && !timer) tick();
     };
 
+    // Lets go of a direction or A press still in progress, so nothing stays held in the page.
+    // Main accepts these even after the window has lost focus.
+    function releaseHeld() {
+        if (nav && !nav.primed) api.sendGamepadCommand({ type: 'navigate', dir: nav.dir, phase: 'release' });
+        if (aDownAt) api.sendGamepadCommand({ type: 'release' });
+        nav = null;
+        aDownAt = 0;
+        aHeld = false;
+    }
+
     const stop = () => {
+        releaseHeld();
         cancelAnimationFrame(frame);
         clearTimeout(timer);
         frame = 0;
         timer = 0;
         previous = null;
-        nav = null;
         stickDir = null;
-        aDownAt = 0;
     };
 
-    // Listening from page load makes this page eligible for the browser's first-button-press
-    // unlock, which only reaches documents already watching the gamepad.
-    window.addEventListener('gamepadconnected', start);
-    window.addEventListener('gamepaddisconnected', () => {
+    const onConnected = () => start();
+    const onDisconnected = () => {
         if (!Array.from(navigator.getGamepads()).some((pad) => pad && pad.connected)) {
             window.dispatchEvent(new CustomEvent('gamepad-idle'));
         }
-    });
+    };
+
+    // Watching the gamepad makes Chromium poll the controllers every few milliseconds, so only
+    // watch while the feature is on and the window is in front. Watching also opts this page into
+    // the browser's first-button-press unlock, which then lasts for the session.
+    const listen = (on) => {
+        if (on === listening) return;
+        listening = on;
+        const method = on ? 'addEventListener' : 'removeEventListener';
+        window[method]('gamepadconnected', onConnected);
+        window[method]('gamepaddisconnected', onDisconnected);
+    };
+
     document.addEventListener('visibilitychange', start);
 
     api.onGamepadState((state) => {
         enabled = !!(state && state.enabled);
         focused = !!(state && state.focused);
+        listen(enabled && focused);
         if (enabled && focused) start();
         else stop();
         if (!enabled) window.dispatchEvent(new CustomEvent('gamepad-idle'));

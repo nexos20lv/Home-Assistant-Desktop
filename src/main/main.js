@@ -651,6 +651,8 @@ function createMainWindow() {
     mainWindow.on('focus', sendGamepadState);
     mainWindow.on('blur', () => {
         releaseGamepadKey();
+        // Let go of a card press in progress (A held on it) and reset the page's press state.
+        if (gamepadState.used) queueGamepadCommand({ type: 'cancel' });
         sendGamepadState();
     });
 
@@ -1149,6 +1151,10 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('hardwareAcceleration', settings.hardwareAcceleration !== false);
     store.set('gamepadNavigation', settings.gamepadNavigation !== false);
     gamepadState.enabled = settings.gamepadNavigation !== false;
+    if (!gamepadState.enabled) {
+        releaseGamepadKey();
+        if (gamepadState.used) queueGamepadCommand({ type: 'hide' });
+    }
     sendGamepadState();
 
     applyShellTheme(settings.shellTheme || 'system');
@@ -1291,14 +1297,28 @@ ipcMain.on('trigger-widget-action', (_event, action) => {
 const GAMEPAD_WORLD_ID = 1001; // 0 is the page's own world, 999 is Electron's preload world
 const GAMEPAD_COMMANDS = new Set(['navigate', 'press', 'select', 'hold', 'release', 'back', 'menu', 'tab', 'page', 'scroll', 'assist', 'fullscreen']);
 const GAMEPAD_KEYS = new Set(['Enter', 'Space', 'Escape', 'Up', 'Down', 'Left', 'Right', 'a']);
+const GAMEPAD_ARROW_KEYS = new Set(['Up', 'Down', 'Left', 'Right']);
+// Bookkeeping commands main sends itself; they never install the runtime into a page.
+const GAMEPAD_INTERNAL_COMMANDS = new Set(['status', 'cancel', 'hide']);
+const GAMEPAD_CALL_TIMEOUT_MS = 1500;
+const GAMEPAD_TIMED_OUT = Symbol('timed out');
 const gamepadState = {
     enabled: store.get('gamepadNavigation', true),
+    used: false,
     source: null,
     queue: Promise.resolve(),
-    heldKey: null,
+    waiting: 0, // commands queued but not started yet
+    heldKey: null, // slider arrow key held down by a D-pad direction...
+    heldDir: null, // ...and that direction
     focusRect: null,
+    refreshTimer: null,
     lastErrorAt: 0
 };
+
+// Commands that only let go of things or hide the ring. They always go through, even after the
+// window lost focus or the setting was turned off, so that nothing stays held.
+const isGamepadCleanup = (command) => command.type === 'release' || command.type === 'cancel' || command.type === 'hide'
+    || (command.type === 'navigate' && command.phase === 'release');
 
 function sendGamepadState() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1325,24 +1345,30 @@ function sanitizeGamepadCommand(raw) {
     return command;
 }
 
+// Runs a command in the page. A page that is being replaced may never answer, so every call gives
+// up after a moment instead of stalling the queue (and the controller) for good.
 async function runGamepadNav(command) {
     const contents = view.webContents;
-    const call = `globalThis.__hadGamepad ? globalThis.__hadGamepad.run(${JSON.stringify(command)}) : null`;
-    let result = await contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code: call }]);
-    if (result === null) {
+    const call = (code) => Promise.race([
+        contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code }]),
+        new Promise((resolve) => setTimeout(() => resolve(GAMEPAD_TIMED_OUT), GAMEPAD_CALL_TIMEOUT_MS))
+    ]);
+    const run = `globalThis.__hadGamepad ? globalThis.__hadGamepad.run(${JSON.stringify(command)}) : null`;
+    let result = await call(run);
+    if (result === null && !GAMEPAD_INTERNAL_COMMANDS.has(command.type)) {
         // First command since this page loaded: install the runtime, then retry.
         if (gamepadState.source === null) {
             gamepadState.source = fs.readFileSync(path.join(__dirname, '../renderer/gamepad-nav.js'), 'utf8');
         }
-        await contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code: gamepadState.source }]);
-        result = await contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code: call }]);
+        if (await call(gamepadState.source) !== GAMEPAD_TIMED_OUT) result = await call(run);
     }
     return result && typeof result === 'object' ? result : {};
 }
 
 function sendGamepadKey(keyCode, { down = true, up = true, repeat = false } = {}) {
     const contents = view.webContents;
-    if (!contents.isFocused()) contents.focus();
+    // Pressing a key needs the view focused; releasing one must not pull the window to the front.
+    if (down && !contents.isFocused()) contents.focus();
     const modifiers = repeat ? ['isAutoRepeat'] : [];
     if (down) {
         contents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
@@ -1359,6 +1385,21 @@ function releaseGamepadKey() {
         sendGamepadKey(gamepadState.heldKey, { down: false });
     }
     gamepadState.heldKey = null;
+    gamepadState.heldDir = null;
+}
+
+// Back stays within Home Assistant: not back to the login page, nor to the previous server's
+// pages after a server switch or a Smart Connect failover.
+function canGoBackInHomeAssistant(contents) {
+    const history = contents.navigationHistory;
+    const index = history.getActiveIndex();
+    if (index < 1) return false;
+    try {
+        const previous = new URL(history.getEntryAtIndex(index - 1).url);
+        return previous.origin === new URL(contents.getURL()).origin && !previous.pathname.startsWith('/auth/');
+    } catch (_) {
+        return false;
+    }
 }
 
 // Presses the mouse on a card area that has no keyboard focus, at a point in view CSS pixels.
@@ -1406,34 +1447,53 @@ function scrollGamepadView(dx, dy, smooth) {
     });
 }
 
-function applyGamepadResult(result) {
+function applyGamepadResult(result, command) {
     if (!view || view.webContents.isDestroyed()) return;
     const rect = result.rect;
     gamepadState.focusRect = Array.isArray(rect) && rect.length === 4 && rect.every(Number.isFinite) ? rect : null;
+    let acted = false;
 
     if (typeof result.key === 'string' && GAMEPAD_KEYS.has(result.key)) {
-        if (result.hold) {
+        // Only a slider's arrow key is held, by the D-pad direction that pressed it.
+        if (result.hold && GAMEPAD_ARROW_KEYS.has(result.key) && command.type === 'navigate') {
             releaseGamepadKey();
             gamepadState.heldKey = result.key;
+            gamepadState.heldDir = command.dir;
             sendGamepadKey(result.key, { up: false });
         } else {
             sendGamepadKey(result.key);
+            acted = true;
         }
     }
 
     const at = result.at;
     if (['down', 'up', 'hold'].includes(result.pointer) && Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) {
         sendGamepadPointer(result.pointer, at);
+        acted = true;
     }
 
-    if (result.history === 'back' && view.webContents.navigationHistory.canGoBack()) {
+    if (result.history === 'back' && canGoBackInHomeAssistant(view.webContents)) {
         view.webContents.navigationHistory.goBack();
+        acted = true;
     }
 
     // Nothing more to focus that way: scroll instead, to reveal non-interactive content.
     const step = view.getBounds().height * 0.4;
-    const scroll = { up: [0, -step], down: [0, step], left: [-step, 0], right: [step, 0] }[result.scroll];
-    if (scroll) scrollGamepadView(scroll[0], scroll[1], true);
+    switch (result.scroll) {
+        case 'up': scrollGamepadView(0, -step, true); break;
+        case 'down': scrollGamepadView(0, step, true); break;
+        case 'left': scrollGamepadView(-step, 0, true); break;
+        case 'right': scrollGamepadView(step, 0, true); break;
+        default: break;
+    }
+
+    // A key or click may have opened a dialog or moved focus: aim scrolling at the middle of the
+    // view until the page reports where focus ended up.
+    if (acted) {
+        gamepadState.focusRect = null;
+        clearTimeout(gamepadState.refreshTimer);
+        gamepadState.refreshTimer = setTimeout(() => queueGamepadCommand({ type: 'status' }), 500);
+    }
 
     if (typeof result.error === 'string' && Date.now() - gamepadState.lastErrorAt > 10000) {
         gamepadState.lastErrorAt = Date.now();
@@ -1442,21 +1502,52 @@ function applyGamepadResult(result) {
 }
 
 async function performGamepadCommand(command) {
-    if (!view || view.webContents.isDestroyed()) return;
-    if (command.type === 'navigate' && command.phase !== 'press') {
-        // A slider owns the held direction: repeat its arrow key, then let go with the D-pad.
+    if (!view || view.webContents.isDestroyed() || !mainWindow || mainWindow.isDestroyed()) return;
+    // Checked again when the command runs, not only when it arrived: a queued Enter must not act
+    // (and pull the app to the front) after the user switched to another window.
+    const allowed = () => isGamepadCleanup(command) || (gamepadState.enabled && mainWindow.isFocused());
+    if (!allowed()) return;
+    if (command.type === 'navigate') {
         if (gamepadState.heldKey) {
-            if (command.phase === 'repeat') sendGamepadKey(gamepadState.heldKey, { up: false, repeat: true });
-            else releaseGamepadKey();
-            return;
+            if (command.dir === gamepadState.heldDir && command.phase !== 'press') {
+                // A slider owns this direction: repeat its arrow key, let go with the D-pad.
+                if (command.phase === 'repeat') sendGamepadKey(gamepadState.heldKey, { up: false, repeat: true });
+                else releaseGamepadKey();
+                return;
+            }
+            releaseGamepadKey(); // another direction took over
         }
         if (command.phase === 'release') return;
     }
-    applyGamepadResult(await runGamepadNav(command));
+    // A page that is still loading can't be navigated; skip rather than replay presses later.
+    if (!isGamepadCleanup(command) && view.webContents.isLoadingMainFrame()) return;
+    const result = await runGamepadNav(command);
+    if (!allowed() || view.webContents.isDestroyed()) return;
+    applyGamepadResult(result, command);
+}
+
+// Commands run in order, since each starts from wherever the previous one moved focus.
+function queueGamepadCommand(command) {
+    // A held D-pad repeats every 110 ms. When the page answers slower than that, drop repeats
+    // instead of letting them pile up and keep moving focus after the D-pad is released.
+    if (command.type === 'navigate' && command.phase === 'repeat' && gamepadState.waiting > 0) return;
+    gamepadState.waiting++;
+    gamepadState.queue = gamepadState.queue
+        .then(() => {
+            gamepadState.waiting--;
+            return performGamepadCommand(command);
+        })
+        .catch((error) => {
+            if (Date.now() - gamepadState.lastErrorAt > 10000) {
+                gamepadState.lastErrorAt = Date.now();
+                addAppLog('warn', 'Controller command failed', error.message);
+            }
+        });
 }
 
 function handleGamepadCommand(command) {
     if (!view || view.webContents.isDestroyed()) return;
+    gamepadState.used = true;
     if (command.type === 'fullscreen') {
         mainWindow.setFullScreen(!mainWindow.isFullScreen());
         return;
@@ -1469,22 +1560,15 @@ function handleGamepadCommand(command) {
         scrollGamepadView(0, command.delta * view.getBounds().height * 0.8, true);
         return;
     }
-    // Everything else runs in order, since each step starts from wherever the last one moved focus.
-    gamepadState.queue = gamepadState.queue
-        .then(() => performGamepadCommand(command))
-        .catch((error) => {
-            if (Date.now() - gamepadState.lastErrorAt > 10000) {
-                gamepadState.lastErrorAt = Date.now();
-                addAppLog('warn', 'Controller command failed', error.message);
-            }
-        });
+    queueGamepadCommand(command);
 }
 
 ipcMain.on('gamepad-command', (event, raw) => {
     if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
-    if (!gamepadState.enabled || !mainWindow.isFocused()) return;
     const command = sanitizeGamepadCommand(raw);
-    if (command) handleGamepadCommand(command);
+    if (!command) return;
+    if (!isGamepadCleanup(command) && (!gamepadState.enabled || !mainWindow.isFocused())) return;
+    handleGamepadCommand(command);
 });
 
 function applyShellTheme(theme) {

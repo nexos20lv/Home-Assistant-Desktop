@@ -8,7 +8,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Added
 - **Controller navigation**: drive dashboards, the sidebar, dialogs and menus with a gamepad (D-pad or left stick to move, A to select, hold A or X for more info, B to go back, LB/RB to switch views, LT/RT to page, right stick to scroll, Menu for the sidebar, Y for Assist). Custom cards without keyboard focus are reached too, and pressed like a tap. Preferences → General → Controller. See [Controller](Controller.md).
-- **Full screen**: View → Toggle Full Screen (F11), or the controller's View button; the title bar is hidden in full screen.
+- **Full screen**: F11 (Ctrl+Cmd+F on macOS) or the controller's View button.
 
 ### Fixed
 - The Home Assistant view was sized from the outer window size, so on Windows a maximized window cut off HA's right and bottom edges (16 px at 150% scaling).

@@ -24,7 +24,9 @@ A highlight ring shows which control is selected; the controller moves it around
 
 - **Sliders:** on a slider (for example a light's brightness in its more-info dialog), the D-pad along the slider adjusts it; the other direction moves on.
 - **Text fields:** the D-pad keeps moving between controls. Type with a keyboard or the on-screen keyboard.
-- **Touch and mouse** still work as usual. Touching the screen or moving the mouse hides the highlight; the next controller input brings it back where you left off.
+- **Custom cards** that offer no keyboard support (many Mushroom or Bubble cards, chips, the weather card…) are reached through their clickable area, and **A** presses them like a tap, so holding **A** works like a long press.
+- **Touch and mouse** still work as usual. Touching the screen or moving the mouse hides the highlight; the next controller input brings it back on the focused control if it is on screen, otherwise on the first control in view.
+- **B** only goes back within Home Assistant: never to the login page, nor to another server's pages after switching servers.
 - The first time a controller is used, the title bar shows a short button guide for a few seconds.
 
 ---
@@ -55,7 +57,7 @@ Press **View** on the controller, or **F11** (**Ctrl+Cmd+F** on macOS), to hide 
 |---|---|
 | Nothing happens | Controller Navigation is on in Preferences; the app window is in the foreground; press a button once to wake the controller |
 | The controller moves the mouse pointer | The handheld or a tool such as Steam Input is mapping the controller to mouse/keyboard; switch it to gamepad mode |
-| A control can't be reached | Some custom cards aren't keyboard-focusable, so they can't take focus. Touch still works; please [open an issue](https://github.com/nexos20lv/Home-Assistant-Desktop/issues) with a screenshot |
+| A control can't be reached | Controls are reached when they take keyboard focus or show a hand pointer under the mouse; a card with neither can't be. Touch still works; please [open an issue](https://github.com/nexos20lv/Home-Assistant-Desktop/issues) with a screenshot |
 
 ---
 
@@ -63,7 +65,7 @@ Press **View** on the controller, or **F11** (**Ctrl+Cmd+F** on macOS), to hide 
 
 For contributors; see also [Development](Development.md).
 
-1. **Reading the controller.** The title-bar page (`shell.html`) loads `src/renderer/gamepad-input.js`, which polls the W3C Gamepad API. Being a local `file://` page, it works whatever URL Home Assistant is served from, and it keeps receiving gamepad data while the Home Assistant view has keyboard focus. It polls every frame while in use, 20 times a second otherwise, and not at all while the window is in the background or no controller is connected.
-2. **Commands.** It turns button presses into commands (`navigate`, `select`, `back`, `tab`, `scroll`…) and sends them over the `gamepad-command` IPC channel. The main process validates them and ignores them unless the main window is focused and the setting is on.
+1. **Reading the controller.** The title-bar page (`shell.html`) loads `src/renderer/gamepad-input.js`, which polls the W3C Gamepad API. Being a local `file://` page, it works whatever URL Home Assistant is served from, and it keeps receiving gamepad data while the Home Assistant view has keyboard focus. It only watches the controller while the window is in the foreground and the setting is on (watching makes Chromium poll the controllers), then reads it every frame while in use and about 30 times a second otherwise.
+2. **Commands.** It turns button presses into commands (`navigate`, `select`, `back`, `tab`, `scroll`…) and sends them over the `gamepad-command` IPC channel. The main process validates them and ignores them unless the main window is focused and the setting is on, checked both when a command arrives and when it runs. Releases always go through, so nothing stays held. Commands run one at a time; each call into the page gives up after 1.5 s, and nothing runs while a page is loading.
 3. **Navigation inside Home Assistant.** `src/renderer/gamepad-nav.js` is injected on first use with `webContents.executeJavaScriptInIsolatedWorld()` (world `1001`). It shares the page's DOM but not its JavaScript, so Home Assistant can neither see nor call it, and the view still has no preload. It walks open shadow roots and slots to find focusable controls, confines focus to an open dialog or menu, and picks the next control with a scoring similar to Chromium's spatial navigation.
 4. **Trusted input.** Select (Enter or Space), Escape and slider arrows are sent as native key events with `webContents.sendInputEvent()`, so Home Assistant handles them exactly like a keyboard; scrolling is sent as wheel events.

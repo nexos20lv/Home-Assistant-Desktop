@@ -65,11 +65,19 @@
         return el && el !== document.body && el !== document.documentElement ? el : null;
     };
 
-    // Dialogs and open menus confine navigation, as their focus traps do for Tab.
+    // Dialogs, menus and open dropdowns confine navigation, as their focus traps do for Tab, and B
+    // closes them.
     const isScope = (el) => {
         if (el.localName === 'dialog') return el.open;
         const role = el.getAttribute('role');
-        return role === 'dialog' || role === 'alertdialog' || role === 'menu' || el.getAttribute('aria-modal') === 'true';
+        if (role === 'dialog' || role === 'alertdialog' || role === 'menu' || el.getAttribute('aria-modal') === 'true') return true;
+        if (el.hasAttribute('popover')) return el.id !== RING_ID && el.matches(':popover-open');
+        // Older select menus float a listbox over the page without the popover API.
+        if (role === 'listbox') {
+            const position = getComputedStyle(el).position;
+            return position === 'fixed' || position === 'absolute';
+        }
+        return false;
     };
 
     const isFocusable = (el) => {
@@ -80,25 +88,25 @@
         return el.localName !== 'slot' && !isScope(el);
     };
 
+    const hasPointer = (el) => !!el && el.nodeType === Node.ELEMENT_NODE && getComputedStyle(el).cursor === 'pointer';
+
     // One pass over the composed tree: focusable controls, clickable areas (the outermost element
-    // with a pointer cursor) and dialog/menu containers.
+    // with a pointer cursor, judged against its parent as rendered) and dialog/menu containers.
     const scan = () => {
         const focusables = [];
         const clickables = [];
         const scopes = [];
-        const stack = [document.documentElement, false]; // element, then whether its parent shows a pointer
+        const stack = [document.documentElement];
         while (stack.length) {
-            const parentPointer = stack.pop();
             const el = stack.pop();
             if (el.inert || el.id === RING_ID || SKIPPED_TAGS.has(el.localName)) continue;
-            const pointer = getComputedStyle(el).cursor === 'pointer';
             if (isFocusable(el)) focusables.push(el);
             else if (isScope(el)) scopes.push(el);
-            else if (pointer && !parentPointer) clickables.push(el);
+            else if (hasPointer(el) && !hasPointer(parentOf(el))) clickables.push(el);
             const children = el.children;
-            for (let i = children.length - 1; i >= 0; i--) stack.push(children[i], pointer);
+            for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]);
             const root = el.shadowRoot;
-            if (root) for (let i = root.children.length - 1; i >= 0; i--) stack.push(root.children[i], pointer);
+            if (root) for (let i = root.children.length - 1; i >= 0; i--) stack.push(root.children[i]);
         }
         // A clickable area is reached through focusable controls when it holds some, or when it is
         // part of one (an icon inside a button).
@@ -182,7 +190,8 @@
 
     // Spatial navigation in the spirit of Chromium's (spatial_navigation.cc): the nearest element on
     // the requested side, strongly preferring ones in the same row or column as the current element.
-    const nearest = (from, dir, items, exclude) => {
+    // Strict mode keeps to that row or column; see the threshold below.
+    const nearest = (from, dir, items, exclude, strict = true) => {
         const [dx, dy] = DIRECTIONS[dir];
         const fx = (from.left + from.right) / 2;
         const fy = (from.top + from.bottom) / 2;
@@ -212,7 +221,7 @@
             // Stay in the current row or column: left/right may drift a little up or down (uneven
             // columns), up/down must overlap horizontally, so the end of a column doesn't jump to
             // another one. When nothing qualifies the page scrolls instead.
-            if (!inside && !encloses && offAxis > (dx ? Math.max(from.height, 96) : 16)) continue;
+            if (strict && !inside && !encloses && offAxis > (dx ? Math.max(from.height, 96) : 16)) continue;
             // Like Chromium, anything outside the current row (or column) pays half the current
             // element's size on top, so a far neighbour in the same row beats a near diagonal one.
             const misaligned = offAxis > 0 ? offAxis + (dx ? from.height : from.width) / 2 : 0;
@@ -280,8 +289,11 @@
     let trackUntil = 0;
     let trackFrame = 0;
     let trackTimer = 0;
+    let lastCommandAt = 0;
     // Mouse events main.js sends for us must not count as the user taking over with the mouse.
     let ownPointerUntil = 0;
+    // The ring goes away after a minute without controller input; the next input brings it back.
+    const IDLE_HIDE_MS = 60000;
 
     const createRing = () => {
         const el = document.createElement('div');
@@ -309,13 +321,17 @@
         if (!ring.isConnected) (document.body || document.documentElement).append(ring);
         ring.style.setProperty('transition', reducedMotion.matches ? 'none'
             : 'left 120ms ease-out, top 120ms ease-out, width 120ms ease-out, height 120ms ease-out, transform 120ms ease-out');
-        try {
-            // Re-open on entering a dialog so the ring is back on top of the top-layer stack.
-            if (ring.matches(':popover-open') && scope !== ringScope) ring.hidePopover();
-            if (!ring.matches(':popover-open')) ring.showPopover();
-        } catch (_) {
-            ring.removeAttribute('popover');
+        if (!ring.hasAttribute('popover')) {
             ring.style.setProperty('display', 'block');
+        } else {
+            try {
+                // Re-open on entering a dialog so the ring is back on top of the top-layer stack.
+                if (ring.matches(':popover-open') && scope !== ringScope) ring.hidePopover();
+                if (!ring.matches(':popover-open')) ring.showPopover();
+            } catch (_) {
+                ring.removeAttribute('popover');
+                ring.style.setProperty('display', 'block');
+            }
         }
         ringScope = scope;
     };
@@ -324,9 +340,9 @@
         if (!shown || !ring) return;
         const el = current();
         const r = el && !isScope(el) ? el.getBoundingClientRect() : null;
-        if (!r || r.width < 1 || r.height < 1) {
-            // Focus is gone for now (a dialog closed) or sits on a dialog itself rather than one
-            // of its controls; the ring comes back with the next focused control.
+        if (!r || r.width < 1 || r.height < 1 || !inViewport(r)) {
+            // Focus is gone for now (a dialog closed), sits on a dialog itself rather than one of
+            // its controls, or was scrolled away; the ring comes back with it.
             ring.style.setProperty('opacity', '0');
             ringTarget = null;
             return;
@@ -355,6 +371,10 @@
         trackFrame = 0;
         trackTimer = 0;
         if (!shown) return;
+        if (performance.now() - lastCommandAt > IDLE_HIDE_MS) {
+            hideRing();
+            return;
+        }
         placeRing();
         if (performance.now() < trackUntil) trackFrame = requestAnimationFrame(trackStep);
         else trackTimer = setTimeout(trackStep, 250);
@@ -384,7 +404,8 @@
         ringTarget = null;
         if (ring && ring.isConnected) {
             ring.style.removeProperty('transform');
-            if (ring.matches(':popover-open')) ring.hidePopover();
+            if (!ring.hasAttribute('popover')) ring.style.setProperty('display', 'none');
+            else if (ring.matches(':popover-open')) ring.hidePopover();
         }
     };
 
@@ -403,7 +424,11 @@
     addEventListener('focusin', () => {
         const el = activeElement();
         if (aimed && !(el && contains(el, aimed))) aimed = null;
-        if (shown) track(400);
+        if (!shown) return;
+        // A dialog that just opened sits above the ring in the top layer: raise the ring again.
+        const scope = el ? closest(el, isScope) : null;
+        if (scope !== ringScope) openRing(scope);
+        track(400);
     }, { capture: true, passive: true });
 
     // Touch or mouse input hands control back: hide the ring until the next controller input.
@@ -432,6 +457,10 @@
         } else {
             aimed = null;
             el.focus({ preventScroll: true });
+            // Some elements look focusable but refuse focus (e.g. a link without an href); aim at
+            // those instead, or every press that way would pick the same element again.
+            const active = activeElement();
+            if (!active || !(active === el || contains(el, active))) aimed = el;
         }
         reveal(el);
         showRing(scope);
@@ -543,9 +572,13 @@
             if (axis && axis === (DIRECTIONS[dir][0] ? 'x' : 'y')) return status({ key: ARROW_KEYS[dir], hold: true });
         }
         // Up and down stay on their side of the sidebar's edge; left and right cross it.
+        const vertical = !!DIRECTIONS[dir][1];
         const inSidebar = !!sidebar && contains(sidebar, active);
-        const pool = DIRECTIONS[dir][1] ? items.filter((item) => item.inSidebar === inSidebar) : items;
-        const next = nearest(r, dir, pool, active);
+        const pool = vertical ? items.filter((item) => item.inSidebar === inSidebar) : items;
+        let next = nearest(r, dir, pool, active);
+        // From the toolbar, down may land on content that isn't in the same column (a narrow
+        // dashboard centred under a wide toolbar).
+        if (!next && vertical && isChrome(active)) next = nearest(r, dir, pool, active, false);
         if (!next) return status({ scroll: dir });
         moveTo(next.el, next.clickable, scope);
         return status();
@@ -607,6 +640,16 @@
         return releasePointer() || status();
     };
 
+    // The window lost focus or the controller went away mid-press: let go of everything.
+    const cancel = () => release();
+
+    // Controller navigation was turned off.
+    const hide = () => {
+        hideRing();
+        pressWoke = false;
+        return releasePointer() || {};
+    };
+
     const back = () => {
         const ctx = context();
         if (ctx.sidebar && ctx.active && contains(ctx.sidebar, ctx.active)) {
@@ -664,13 +707,18 @@
         menu,
         tab: (command) => tab(command.delta),
         assist,
+        cancel,
+        hide,
         status: () => status()
     };
+    // Bookkeeping from main.js, not controller input: they don't count as activity.
+    const PASSIVE_COMMANDS = new Set(['status', 'cancel', 'hide']);
 
     globalThis.__hadGamepad = {
         run(command) {
             const handler = command && Object.prototype.hasOwnProperty.call(COMMANDS, command.type) ? COMMANDS[command.type] : null;
             if (!handler) return {};
+            if (!PASSIVE_COMMANDS.has(command.type)) lastCommandAt = performance.now();
             try {
                 return handler(command) || {};
             } catch (error) {

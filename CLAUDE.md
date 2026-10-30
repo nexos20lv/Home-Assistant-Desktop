@@ -72,7 +72,7 @@ Main Process (main.js)
 - `contextIsolation: true`, `nodeIntegration: false` everywhere
 - The HA BrowserView has **no preload** — maximum isolation
 - All IPC is typed via `contextBridge.exposeInMainWorld`
-- The only script run inside the BrowserView is `gamepad-nav.js`, injected on the first controller command with `executeJavaScriptInIsolatedWorld(1001, …)`. It shares HA's DOM but not its JavaScript, and exposes nothing to the page (see Controller navigation below)
+- Apart from the one-line theme sync (`executeJavaScript`), the only script run inside the BrowserView is `gamepad-nav.js`, injected on the first controller command with `executeJavaScriptInIsolatedWorld(1001, …)`. It shares HA's DOM but not its JavaScript, and exposes nothing to the page (see Controller navigation below)
 
 ### Key state (module-level in main.js)
 
@@ -175,7 +175,7 @@ This was the root cause of the OOM crash fixed in v1.0.27. Never skip it — inc
 Any script that runs inside the HA page (today only `gamepad-nav.js`) uses DOM API only (`createElement`, `setAttribute`, `textContent`). Never use `innerHTML` — XSS risk.
 
 ### Controller navigation stays in the isolated world
-`gamepad-nav.js` runs in isolated world `1001` (0 is the page, 999 is Electron's preload world). Never move it to the page's main world or expose anything to the page. Main treats its return values as untrusted: keys are checked against `GAMEPAD_KEYS`, coordinates are validated, and the page can never trigger app-level actions (full screen is decided in main from the command alone). Commands are ignored unless the main window is focused and `gamepadNavigation` is on.
+`gamepad-nav.js` runs in isolated world `1001` (0 is the page, 999 is Electron's preload world). Never move it to the page's main world or expose anything to the page. Main treats its return values as untrusted: keys are checked against `GAMEPAD_KEYS`, coordinates are validated, and the page can never trigger app-level actions (full screen is decided in main from the command alone). Commands are ignored unless the main window is focused and `gamepadNavigation` is on, checked when a command arrives and again when it runs (queued commands must not act after a blur); cleanup commands (releases, `cancel`, `hide`) always go through. Every call into the page is raced against a 1.5 s timeout, so a page that never answers can't stall the queue.
 
 ### execFile over exec for external commands
 Use `execFile('osascript', ['-e', script])` not `exec(\`osascript -e ${script}\`)`. Template literals in exec = command injection.
