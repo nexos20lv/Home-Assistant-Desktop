@@ -71,6 +71,8 @@ You can now use these in automations! (e.g., Turn on lights when PC is Active).
 | Shortcut | Action |
 | :--- | :--- |
 | **Ctrl + Alt + H** | Boss Mode! Instantly hide/show the app. |
+| **F11** | Toggle full screen (also the controller's **View** button). |
+| **Controller** | D-pad to move, **A** to select, **B** to go back, **Menu** for the sidebar. See the [Controller guide](docs/Controller.md). |
 | **F5** | Reload the page (if stuck). |
 | **Ctrl + R** | Reload the page. |
 | **Right-Click Tray** | Access "Reset Configuration" if you changed your URL. |

@@ -466,6 +466,21 @@
                         <span class="slider"></span>
                     </label>
                 </div>
+
+                <div>
+                  <div class="section-header" data-i18n="preferences.controller">Controller</div>
+                  <div style="height: 12px;"></div>
+                  <div class="setting-row">
+                      <div class="setting-info">
+                          <h3 data-i18n="preferences.gamepadNavigation">Controller Navigation</h3>
+                          <p data-i18n="preferences.gamepadNavigationHelp">Navigate with a gamepad: D-pad or left stick to move, A to select (hold for more info), B to go back, LB/RB to switch views, right stick to scroll, Menu for the sidebar, View for full screen.</p>
+                      </div>
+                      <label class="switch">
+                          <input type="checkbox" id="gamepad-navigation">
+                          <span class="slider"></span>
+                      </label>
+                  </div>
+                </div>
             </div>
 
             <!-- SENSORS TAB -->
@@ -485,7 +500,7 @@
                 <div class="setting-row vertical">
                     <div class="setting-info">
                         <h3>Default Media Player</h3>
-                        <p>Keyboard media keys will target this entity ID.</p>
+                        <p>Keyboard media keys control this entity. Leave empty to keep them for other apps.</p>
                     </div>
                     <input type="text" id="media-entity" placeholder="media_player.itunes_mac">
                 </div>
@@ -727,6 +742,7 @@
                 document.getElementById('shell-theme').value = settings.shellTheme || 'system';
                 document.getElementById('startup-path').value = settings.startupPath || '';
                 document.getElementById('hardware-acceleration').checked = settings.hardwareAcceleration !== false;
+                document.getElementById('gamepad-navigation').checked = settings.gamepadNavigation !== false;
                 document.getElementById('app-version').innerText = settings.appVersion || '1.0.0';
 
                 // Scan and populate CSS themes from src/themes/ and user appData themes directory
@@ -792,7 +808,8 @@
                 displayScale: Number(document.getElementById('display-scale').value),
                 shellTheme: document.getElementById('shell-theme').value,
                 startupPath: document.getElementById('startup-path').value.trim(),
-                hardwareAcceleration: document.getElementById('hardware-acceleration').checked
+                hardwareAcceleration: document.getElementById('hardware-acceleration').checked,
+                gamepadNavigation: document.getElementById('gamepad-navigation').checked
             };
 
             await window.prefsAPI.saveSettings(settings);

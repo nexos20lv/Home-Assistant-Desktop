@@ -4,6 +4,30 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Controller navigation**: drive dashboards, the sidebar, dialogs and menus with a gamepad (D-pad or left stick to move, A to select, hold A or X for more info, B to go back, LB/RB to switch views, LT/RT to page, right stick to scroll, Menu for the sidebar, Y for Assist). Custom cards without keyboard focus are reached too, and pressed like a tap. Preferences → General → Controller. See [Controller](Controller.md).
+- **Full screen**: F11 (Ctrl+Cmd+F on macOS) or the controller's View button.
+
+### Changed
+- **Media keys** are only taken over once a media player is set in Preferences → Sensors. They used to be grabbed system-wide for a default target (`media_player.all`) that isn't an entity, so other apps lost them for nothing.
+- **Disconnect / Reset URL** asks for confirmation first.
+
+### Fixed
+- The Home Assistant view was sized from the outer window size, so on Windows a maximized window cut off HA's right and bottom edges (16 px at 150% scaling).
+- The title bar never loaded its translations and showed raw keys such as `shell.local` in the connection pill and button tooltips.
+- **Auto-updates** never found a new version on Windows: the release workflow didn't upload Squirrel's `RELEASES` file and `.nupkg` (a macOS `.zip` is now published too).
+- The app menu's Quit, Cmd+Q and an update's Restart only hid the window instead of quitting.
+- On a first launch, or after Disconnect / Reset, startup stopped early: no tray, sensors, Smart Connect or WebSocket until the app was restarted.
+- Display Scale was ignored at launch; it only applied after pressing Save.
+- On Windows the Local/Remote/Offline pill sat underneath the window controls and was never visible. Title bar buttons get bigger tap targets on touch screens.
+- The widget's Media tile crashed the main process, and saving Preferences unregistered the media keys until a restart.
+- A failing iframe card marked the connection Offline; Smart Connect now also re-checks shortly after waking from sleep.
+- The full screen buttons of camera and picture cards did nothing.
+
+---
+
 ## [1.0.30] — 2026-05-20
 
 ### Fixed

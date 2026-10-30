@@ -12,6 +12,7 @@ Welcome to the full documentation for **Home Assistant Desktop**, a native Elect
 | [Desktop Sensors](Sensors.md) | All HA entities created by the app, configuration and automations |
 | [Multi-Server Profiles](Multi-Server.md) | Managing several HA instances from one app |
 | [Power User Tools](Power-User.md) | Custom CSS, startup scripts, deep links, PiP, media keys |
+| [Controller Navigation](Controller.md) | Drive dashboards with a gamepad, full screen mode |
 | [Troubleshooting](Troubleshooting.md) | Common problems and diagnostic steps |
 | [Development](Development.md) | Architecture, build system, contributing |
 

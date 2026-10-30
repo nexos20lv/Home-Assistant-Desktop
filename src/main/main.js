@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, nativeTheme, powerMonitor, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, nativeTheme, powerMonitor, dialog, autoUpdater } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const fs = require('fs');
@@ -642,7 +642,21 @@ function createMainWindow() {
 
     // Load the shell (custom title bar)
     mainWindow.loadFile(path.join(__dirname, '../renderer/shell.html'));
-    mainWindow.webContents.once('did-finish-load', () => applyShellTheme());
+    mainWindow.webContents.once('did-finish-load', () => {
+        applyShellTheme();
+        sendGamepadState();
+    });
+
+    // The shell only reads the controller while this window is in the foreground.
+    mainWindow.on('focus', sendGamepadState);
+    mainWindow.on('blur', () => {
+        releaseGamepadKey();
+        // Let go of a card press in progress (A held on it) and reset the page's press state.
+        if (gamepadState.used) queueGamepadCommand({ type: 'cancel' });
+        sendGamepadState();
+    });
+
+    const displayScale = normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE));
 
     // Create BrowserView for Home Assistant Content
     view = new BrowserView({
@@ -650,16 +664,18 @@ function createMainWindow() {
             nodeIntegration: false,
             contextIsolation: true,
             partition: 'persist:homeassistant', // Critical for saving login session
-            backgroundThrottling: true
+            backgroundThrottling: true,
+            // Calling setZoomFactor() before the first page load has no effect; this applies from the start.
+            zoomFactor: displayScale / 100
         }
     });
 
     mainWindow.setBrowserView(view);
 
-    const displayScale = normalizeDisplayScale(store.get('displayScale', DEFAULT_DISPLAY_SCALE));
-    view.webContents.setZoomFactor(displayScale / 100);
-
-    view.webContents.on('did-fail-load', (_event, _errorCode, errorDescription, _validatedURL) => {
+    view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+        // Only Home Assistant's own page failing means it is unreachable; a failing iframe card,
+        // or a load aborted by the next navigation (-3), doesn't.
+        if (!isMainFrame || errorCode === -3) return;
         addAppLog('warn', 'BrowserView failed to load page', errorDescription);
         smartConnectState.currentTarget = 'offline';
         emitNetworkStatus();
@@ -692,38 +708,7 @@ function createMainWindow() {
     });
 
     // Media Keys Integration
-    const sendMediaService = async (service) => {
-        const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
-        const apiToken = await getApiToken();
-        const entityId = store.get('mediaPlayerEntity', 'media_player.all'); // Fallback or user-defined
-
-        if (!haUrl || !apiToken) return;
-
-        const { net } = require('electron');
-        const request = net.request({
-            method: 'POST',
-            url: `${haUrl}/api/services/media_player/${service}`,
-            headers: {
-                'Authorization': `Bearer ${apiToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        request.on('response', (response) => {
-            response.on('data', () => {});
-            response.on('end', () => {});
-            response.on('error', () => {});
-        });
-        request.on('error', (error) => {
-            addAppLog('warn', `Media key call failed (${service})`, error.message);
-        });
-        request.write(JSON.stringify({ entity_id: entityId }));
-        request.end();
-    };
-
-    globalShortcut.register('MediaPlayPause', () => sendMediaService('media_play_pause'));
-    globalShortcut.register('MediaNextTrack', () => sendMediaService('media_next_track'));
-    globalShortcut.register('MediaPreviousTrack', () => sendMediaService('media_previous_track'));
+    registerMediaKeys();
 
     // Context Menu Implementation
     view.webContents.on('context-menu', (event, params) => {
@@ -752,7 +737,9 @@ function createMainWindow() {
             (permission === 'notifications' && allowNotifications) ||
             (permission === 'audioCapture' && allowMic) ||
             (permission === 'videoCapture' && allowCamera) ||
-            permission === 'media';
+            permission === 'media' ||
+            // Camera and picture cards' own full screen buttons
+            permission === 'fullscreen';
 
         callback(permissionAllowed);
     });
@@ -843,18 +830,71 @@ function createMainWindow() {
     });
 }
 
+// ─── Media keys ──────────────────────────────────────────────────────────────
+
+const MEDIA_KEYS = {
+    MediaPlayPause: 'media_play_pause',
+    MediaNextTrack: 'media_next_track',
+    MediaPreviousTrack: 'media_previous_track'
+};
+// The old default. It isn't an entity (Home Assistant's keyword is plain "all"), so it never
+// controlled anything; treat it as unset.
+const LEGACY_MEDIA_ENTITY = 'media_player.all';
+
+function getMediaPlayerEntity() {
+    const entity = String(store.get('mediaPlayerEntity', '') || '').trim();
+    return entity === LEGACY_MEDIA_ENTITY ? '' : entity;
+}
+
+async function sendMediaService(service) {
+    const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
+    const apiToken = await getApiToken();
+    const entityId = getMediaPlayerEntity();
+
+    if (!haUrl || !apiToken || !entityId) return;
+
+    const { net } = require('electron');
+    const request = net.request({
+        method: 'POST',
+        url: `${haUrl}/api/services/media_player/${service}`,
+        headers: {
+            'Authorization': `Bearer ${apiToken}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    request.on('response', (response) => {
+        response.on('data', () => {});
+        response.on('end', () => {});
+        response.on('error', () => {});
+    });
+    request.on('error', (error) => {
+        addAppLog('warn', `Media key call failed (${service})`, error.message);
+    });
+    request.write(JSON.stringify({ entity_id: entityId }));
+    request.end();
+}
+
+// Media keys are global shortcuts: while registered, other apps (music players, browsers,
+// headset buttons) stop receiving them. Only take them when a media player is configured.
+function registerMediaKeys() {
+    for (const accelerator of Object.keys(MEDIA_KEYS)) globalShortcut.unregister(accelerator);
+    if (!getMediaPlayerEntity()) return;
+    for (const [accelerator, service] of Object.entries(MEDIA_KEYS)) {
+        globalShortcut.register(accelerator, () => sendMediaService(service));
+    }
+}
+
 function updateViewBounds() {
     if (!mainWindow || !view) return;
-    const bounds = mainWindow.getBounds();
-    const contentBounds = mainWindow.getContentBounds();
 
-    // Title bar height from shell.css is 32px
-    const titleBarHeight = 40;
+    // Title bar height from shell.css; in full screen Home Assistant gets the whole display.
+    const titleBarHeight = mainWindow.isFullScreen() ? 0 : 40;
 
-    // We strive to fill the window below the title bar
-    // Note: on Windows with 'hidden' titleBarStyle, getContentBounds might include the title bar area
-    // So we just use the window size and offset top.
-    const [width, height] = mainWindow.getSize();
+    // With the 'hidden' titleBarStyle the content area includes the title bar, so fill it and
+    // offset the top. getSize() would also count the invisible resize borders Windows adds
+    // around a maximized window, pushing the view's right and bottom edges off screen.
+    const [width, height] = mainWindow.getContentSize();
 
     view.setBounds({
         x: 0,
@@ -891,6 +931,9 @@ function createSetupWindow() {
     ipcMain.once('config-saved', () => {
         setupWindow.close();
         createMainWindow();
+        // Startup ran without a URL; check the connection now rather than at the next 5-minute tick.
+        evaluateSmartConnect().catch(() => {});
+        connectHaWebSocket().catch(() => {});
     });
 }
 
@@ -994,6 +1037,12 @@ app.whenReady().then(async () => {
                 { role: 'copy' },
                 { role: 'paste' }
             ]
+        },
+        {
+            label: 'View',
+            submenu: [
+                { role: 'togglefullscreen' }
+            ]
         }
     ];
     
@@ -1011,13 +1060,21 @@ app.whenReady().then(async () => {
     Menu.setApplicationMenu(menu);
     console.log('Application menu created with Preferences option');
     
-    // On Windows, make menu visible by default
-    if (process.platform === 'win32') {
+    // On Windows, make menu visible by default. There is no main window yet when the setup
+    // wizard opened instead; throwing here would skip the rest of startup (tray, sensors...).
+    if (process.platform === 'win32' && mainWindow) {
         mainWindow.setAutoHideMenuBar(false);
         mainWindow.setMenuBarVisibility(true);
     }
     
     startSmartConnectMonitor();
+    // Waking up is when the network most often changed (left home, joined another Wi-Fi):
+    // re-check then rather than at the next 5-minute health check, once Wi-Fi has reconnected.
+    powerMonitor.on('resume', () => {
+        setTimeout(() => {
+            evaluateSmartConnect().catch((error) => addAppLog('error', 'SmartConnect check after resume failed', error.message));
+        }, 10000);
+    });
     scheduleSensorReplay();
     runStartupScripts();
     connectHaWebSocket().catch(() => {});
@@ -1081,7 +1138,7 @@ ipcMain.handle('get-settings', async () => {
         autoLaunch: store.get('autoLaunch', false),
         globalShortcut: store.get('globalShortcut', false),
         autoUpdates: store.get('autoUpdates', true),
-        mediaPlayerEntity: store.get('mediaPlayerEntity', 'media_player.all'),
+        mediaPlayerEntity: getMediaPlayerEntity(),
         customCSS: store.get('customCSS', ''),
         biometricLock: store.get('biometricLock', false),
         startupScripts: store.get('startupScripts', ''),
@@ -1102,6 +1159,7 @@ ipcMain.handle('get-settings', async () => {
         shellTheme: store.get('shellTheme', 'system'),
         startupPath: store.get('startupPath', ''),
         hardwareAcceleration: store.get('hardwareAcceleration', true),
+        gamepadNavigation: store.get('gamepadNavigation', true),
         appVersion: app.getVersion()
     };
 });
@@ -1115,7 +1173,7 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('autoLaunch', settings.autoLaunch);
     store.set('globalShortcut', settings.globalShortcut);
     store.set('autoUpdates', settings.autoUpdates);
-    store.set('mediaPlayerEntity', settings.mediaPlayerEntity);
+    store.set('mediaPlayerEntity', String(settings.mediaPlayerEntity || '').trim());
     store.set('customCSS', settings.customCSS);
     store.set('biometricLock', settings.biometricLock);
     store.set('startupScripts', settings.startupScripts);
@@ -1132,6 +1190,13 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('shellTheme', settings.shellTheme || 'system');
     store.set('startupPath', settings.startupPath || '');
     store.set('hardwareAcceleration', settings.hardwareAcceleration !== false);
+    store.set('gamepadNavigation', settings.gamepadNavigation !== false);
+    gamepadState.enabled = settings.gamepadNavigation !== false;
+    if (!gamepadState.enabled) {
+        releaseGamepadKey();
+        if (gamepadState.used) queueGamepadCommand({ type: 'hide' });
+    }
+    sendGamepadState();
 
     applyShellTheme(settings.shellTheme || 'system');
 
@@ -1151,8 +1216,9 @@ ipcMain.handle('save-settings', async (_event, settings) => {
         }
     }
 
-    // 2. Global Shortcut
-    globalShortcut.unregisterAll();
+    // 2. Global Shortcuts (only the toggle; unregisterAll() would also drop the media keys)
+    globalShortcut.unregister('CommandOrControl+Alt+H');
+    registerMediaKeys();
     if (settings.globalShortcut) {
         globalShortcut.register('CommandOrControl+Alt+H', () => {
             if (mainWindow) {
@@ -1260,6 +1326,310 @@ ipcMain.on('trigger-widget-action', (_event, action) => {
     if (action && action.type === 'media') {
         sendMediaService('media_play_pause');
     }
+});
+
+// ─── Controller (gamepad) navigation ─────────────────────────────────────────
+//
+// shell.html reads the controller (gamepad-input.js) and sends commands here. They are carried
+// out in the Home Assistant view by gamepad-nav.js, which runs in an isolated JavaScript world:
+// it shares the page's DOM but not its globals, so Home Assistant can neither see nor call it,
+// and the view still has no preload. Keys that must be trusted (Enter, Escape, slider arrows)
+// and scrolling are sent as native input events.
+
+const GAMEPAD_WORLD_ID = 1001; // 0 is the page's own world, 999 is Electron's preload world
+const GAMEPAD_COMMANDS = new Set(['navigate', 'press', 'select', 'hold', 'release', 'back', 'menu', 'tab', 'page', 'scroll', 'assist', 'fullscreen']);
+const GAMEPAD_KEYS = new Set(['Enter', 'Space', 'Escape', 'Up', 'Down', 'Left', 'Right', 'a']);
+const GAMEPAD_ARROW_KEYS = new Set(['Up', 'Down', 'Left', 'Right']);
+// Bookkeeping commands main sends itself; they never install the runtime into a page.
+const GAMEPAD_INTERNAL_COMMANDS = new Set(['status', 'cancel', 'hide']);
+const GAMEPAD_CALL_TIMEOUT_MS = 1500;
+const GAMEPAD_TIMED_OUT = Symbol('timed out');
+const gamepadState = {
+    enabled: store.get('gamepadNavigation', true),
+    used: false,
+    source: null,
+    queue: Promise.resolve(),
+    waiting: 0, // commands queued but not started yet
+    heldKey: null, // slider arrow key held down by a D-pad direction...
+    heldDir: null, // ...and that direction
+    focusRect: null,
+    refreshTimer: null,
+    lastErrorAt: 0
+};
+
+// Commands that only let go of things or hide the ring. They always go through, even after the
+// window lost focus or the setting was turned off, so that nothing stays held.
+const isGamepadCleanup = (command) => command.type === 'release' || command.type === 'cancel' || command.type === 'hide'
+    || (command.type === 'navigate' && command.phase === 'release');
+
+function sendGamepadState() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('gamepad-state', {
+        enabled: gamepadState.enabled,
+        focused: mainWindow.isFocused()
+    });
+}
+
+function sanitizeGamepadCommand(raw) {
+    if (!raw || typeof raw !== 'object' || !GAMEPAD_COMMANDS.has(raw.type)) return null;
+    const command = { type: raw.type };
+    if (raw.type === 'navigate') {
+        if (!['up', 'down', 'left', 'right'].includes(raw.dir)) return null;
+        command.dir = raw.dir;
+        command.phase = ['press', 'repeat', 'release'].includes(raw.phase) ? raw.phase : 'press';
+    } else if (raw.type === 'tab' || raw.type === 'page') {
+        command.delta = raw.delta < 0 ? -1 : 1;
+    } else if (raw.type === 'scroll') {
+        const clamp = (value) => Math.max(-400, Math.min(400, Number(value) || 0));
+        command.dx = clamp(raw.dx);
+        command.dy = clamp(raw.dy);
+    }
+    return command;
+}
+
+// Runs a command in the page. A page that is being replaced may never answer, so every call gives
+// up after a moment instead of stalling the queue (and the controller) for good.
+async function runGamepadNav(command) {
+    const contents = view.webContents;
+    const call = (code) => Promise.race([
+        contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code }]),
+        new Promise((resolve) => setTimeout(() => resolve(GAMEPAD_TIMED_OUT), GAMEPAD_CALL_TIMEOUT_MS))
+    ]);
+    const run = `globalThis.__hadGamepad ? globalThis.__hadGamepad.run(${JSON.stringify(command)}) : null`;
+    let result = await call(run);
+    if (result === null && !GAMEPAD_INTERNAL_COMMANDS.has(command.type)) {
+        // First command since this page loaded: install the runtime, then retry.
+        if (gamepadState.source === null) {
+            gamepadState.source = fs.readFileSync(path.join(__dirname, '../renderer/gamepad-nav.js'), 'utf8');
+        }
+        if (await call(gamepadState.source) !== GAMEPAD_TIMED_OUT) result = await call(run);
+    }
+    return result && typeof result === 'object' ? result : {};
+}
+
+function sendGamepadKey(keyCode, { down = true, up = true, repeat = false } = {}) {
+    const contents = view.webContents;
+    // Pressing a key needs the view focused; releasing one must not pull the window to the front.
+    if (down && !contents.isFocused()) contents.focus();
+    const modifiers = repeat ? ['isAutoRepeat'] : [];
+    if (down) {
+        contents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+        // Electron sends keyDown as a raw key-down, and Blink only fires keypress (which is what
+        // activates buttons and links on Enter) for an explicit char event.
+        if (keyCode === 'Enter') contents.sendInputEvent({ type: 'char', keyCode, modifiers });
+    }
+    if (up) contents.sendInputEvent({ type: 'keyUp', keyCode });
+}
+
+// Lets go of a slider arrow key held by the D-pad.
+function releaseGamepadKey() {
+    if (gamepadState.heldKey && view && !view.webContents.isDestroyed()) {
+        sendGamepadKey(gamepadState.heldKey, { down: false });
+    }
+    gamepadState.heldKey = null;
+    gamepadState.heldDir = null;
+}
+
+// Back stays within Home Assistant: not back to the login page, nor to the previous server's
+// pages after a server switch or a Smart Connect failover.
+function canGoBackInHomeAssistant(contents) {
+    const history = contents.navigationHistory;
+    const index = history.getActiveIndex();
+    if (index < 1) return false;
+    try {
+        const previous = new URL(history.getEntryAtIndex(index - 1).url);
+        return previous.origin === new URL(contents.getURL()).origin && !previous.pathname.startsWith('/auth/');
+    } catch (_) {
+        return false;
+    }
+}
+
+// Presses the mouse on a card area that has no keyboard focus, at points in view CSS pixels.
+// 'down' and 'up' follow the A button, so the card times taps and long presses itself; 'hold' is
+// a long press; 'drag' slides from one point to another (stepping a slider card).
+async function sendGamepadPointer(phase, [x, y], to) {
+    const contents = view.webContents;
+    const zoom = contents.getZoomFactor();
+    const at = (px, py) => ({ x: Math.round(px * zoom), y: Math.round(py * zoom) });
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const release = (point) => {
+        if (contents.isDestroyed()) return;
+        contents.sendInputEvent({ type: 'mouseUp', ...point, button: 'left', clickCount: 1 });
+        // Move the pointer away again so the card doesn't keep its hover look.
+        contents.sendInputEvent({ type: 'mouseLeave', ...point });
+    };
+    const start = at(x, y);
+    if (phase === 'up') {
+        release(start);
+        return;
+    }
+    contents.sendInputEvent({ type: 'mouseMove', ...start });
+    contents.sendInputEvent({ type: 'mouseDown', ...start, button: 'left', clickCount: 1 });
+    if (phase === 'hold') {
+        await sleep(650); // past Home Assistant's 500 ms long press
+        release(start);
+    } else if (phase === 'drag') {
+        // Slide in steps, as a finger would: slider cards start sliding on sideways movement.
+        const end = at(to[0], to[1]);
+        for (let i = 1; i <= 6; i++) {
+            await sleep(16);
+            if (contents.isDestroyed()) return;
+            const stepX = Math.round(start.x + ((end.x - start.x) * i) / 6);
+            contents.sendInputEvent({ type: 'mouseMove', x: stepX, y: end.y, modifiers: ['leftButtonDown'] });
+        }
+        await sleep(16);
+        release(end);
+    }
+}
+
+// Scrolls whatever is under the focused element (or the middle of the view) with a wheel event.
+function scrollGamepadView(dx, dy, smooth) {
+    const contents = view.webContents;
+    const bounds = view.getBounds();
+    const zoom = contents.getZoomFactor();
+    let x = bounds.width / 2;
+    let y = bounds.height / 2;
+    if (gamepadState.focusRect) {
+        const [left, top, width, height] = gamepadState.focusRect;
+        x = (left + width / 2) * zoom;
+        y = (top + height / 2) * zoom;
+    }
+    contents.sendInputEvent({
+        type: 'mouseWheel',
+        x: Math.round(Math.max(1, Math.min(bounds.width - 2, x))),
+        y: Math.round(Math.max(1, Math.min(bounds.height - 2, y))),
+        // sendInputEvent wheel deltas point the opposite way to DOM wheel deltas.
+        deltaX: -dx,
+        deltaY: -dy,
+        hasPreciseScrollingDeltas: !smooth,
+        canScroll: true
+    });
+}
+
+async function applyGamepadResult(result, command) {
+    if (!view || view.webContents.isDestroyed()) return;
+    const rect = result.rect;
+    gamepadState.focusRect = Array.isArray(rect) && rect.length === 4 && rect.every(Number.isFinite) ? rect : null;
+    let acted = false;
+
+    if (typeof result.key === 'string' && GAMEPAD_KEYS.has(result.key)) {
+        // Only a slider's arrow key is held, by the D-pad direction that pressed it.
+        if (result.hold && GAMEPAD_ARROW_KEYS.has(result.key) && command.type === 'navigate') {
+            releaseGamepadKey();
+            gamepadState.heldKey = result.key;
+            gamepadState.heldDir = command.dir;
+            sendGamepadKey(result.key, { up: false });
+        } else {
+            sendGamepadKey(result.key);
+            acted = true;
+        }
+    }
+
+    const isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+    if (['down', 'up', 'hold', 'drag'].includes(result.pointer) && isPoint(result.at)
+        && (result.pointer !== 'drag' || isPoint(result.to))) {
+        // Awaited, so the next command can't interleave with a long press or a drag.
+        await sendGamepadPointer(result.pointer, result.at, result.to);
+        acted = true;
+    }
+
+    if (result.history === 'back' && canGoBackInHomeAssistant(view.webContents)) {
+        view.webContents.navigationHistory.goBack();
+        acted = true;
+    }
+
+    // Nothing more to focus that way: scroll instead, to reveal non-interactive content.
+    const step = view.getBounds().height * 0.4;
+    switch (result.scroll) {
+        case 'up': scrollGamepadView(0, -step, true); break;
+        case 'down': scrollGamepadView(0, step, true); break;
+        case 'left': scrollGamepadView(-step, 0, true); break;
+        case 'right': scrollGamepadView(step, 0, true); break;
+        default: break;
+    }
+
+    // A key or click may have opened a dialog or moved focus: aim scrolling at the middle of the
+    // view until the page reports where focus ended up.
+    if (acted) {
+        gamepadState.focusRect = null;
+        clearTimeout(gamepadState.refreshTimer);
+        gamepadState.refreshTimer = setTimeout(() => queueGamepadCommand({ type: 'status' }), 500);
+    }
+
+    if (typeof result.error === 'string' && Date.now() - gamepadState.lastErrorAt > 10000) {
+        gamepadState.lastErrorAt = Date.now();
+        addAppLog('warn', 'Controller navigation error', result.error);
+    }
+}
+
+async function performGamepadCommand(command) {
+    if (!view || view.webContents.isDestroyed() || !mainWindow || mainWindow.isDestroyed()) return;
+    // Checked again when the command runs, not only when it arrived: a queued Enter must not act
+    // (and pull the app to the front) after the user switched to another window.
+    const allowed = () => isGamepadCleanup(command) || (gamepadState.enabled && mainWindow.isFocused());
+    if (!allowed()) return;
+    if (command.type === 'navigate') {
+        if (gamepadState.heldKey) {
+            if (command.dir === gamepadState.heldDir && command.phase !== 'press') {
+                // A slider owns this direction: repeat its arrow key, let go with the D-pad.
+                if (command.phase === 'repeat') sendGamepadKey(gamepadState.heldKey, { up: false, repeat: true });
+                else releaseGamepadKey();
+                return;
+            }
+            releaseGamepadKey(); // another direction took over
+        }
+        if (command.phase === 'release') return;
+    }
+    // A page that is still loading can't be navigated; skip rather than replay presses later.
+    if (!isGamepadCleanup(command) && view.webContents.isLoadingMainFrame()) return;
+    const result = await runGamepadNav(command);
+    if (!allowed() || view.webContents.isDestroyed()) return;
+    await applyGamepadResult(result, command);
+}
+
+// Commands run in order, since each starts from wherever the previous one moved focus.
+function queueGamepadCommand(command) {
+    // A held D-pad repeats every 110 ms. When the page answers slower than that, drop repeats
+    // instead of letting them pile up and keep moving focus after the D-pad is released.
+    if (command.type === 'navigate' && command.phase === 'repeat' && gamepadState.waiting > 0) return;
+    gamepadState.waiting++;
+    gamepadState.queue = gamepadState.queue
+        .then(() => {
+            gamepadState.waiting--;
+            return performGamepadCommand(command);
+        })
+        .catch((error) => {
+            if (Date.now() - gamepadState.lastErrorAt > 10000) {
+                gamepadState.lastErrorAt = Date.now();
+                addAppLog('warn', 'Controller command failed', error.message);
+            }
+        });
+}
+
+function handleGamepadCommand(command) {
+    if (!view || view.webContents.isDestroyed()) return;
+    gamepadState.used = true;
+    if (command.type === 'fullscreen') {
+        mainWindow.setFullScreen(!mainWindow.isFullScreen());
+        return;
+    }
+    if (command.type === 'scroll') {
+        scrollGamepadView(command.dx, command.dy, false);
+        return;
+    }
+    if (command.type === 'page') {
+        scrollGamepadView(0, command.delta * view.getBounds().height * 0.8, true);
+        return;
+    }
+    queueGamepadCommand(command);
+}
+
+ipcMain.on('gamepad-command', (event, raw) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+    const command = sanitizeGamepadCommand(raw);
+    if (!command) return;
+    if (!isGamepadCleanup(command) && (!gamepadState.enabled || !mainWindow.isFocused())) return;
+    handleGamepadCommand(command);
 });
 
 function applyShellTheme(theme) {
@@ -1660,6 +2030,12 @@ app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') app.quit();
 });
 
+// The close button only hides the main window, so a real quit (the Quit menu item, Cmd+Q,
+// installing an update) has to get past that. Update installs close the windows before
+// before-quit fires, hence the autoUpdater event as well.
+app.on('before-quit', () => { isQuiting = true; });
+autoUpdater.on('before-quit-for-update', () => { isQuiting = true; });
+
 app.on('will-quit', () => {
     if (smartConnectState.timer) clearInterval(smartConnectState.timer);
     if (sensorDeliveryState.replayTimer) clearInterval(sensorDeliveryState.replayTimer);
@@ -1725,7 +2101,19 @@ ipcMain.handle('test-ha-connection', async (_event, payload) => {
     return testHaConnection(payload ? payload.url : '', token);
 });
 
-ipcMain.handle('reset-config', () => {
+ipcMain.handle('reset-config', async (event) => {
+    // The button sits next to Preferences; one stray tap shouldn't wipe the connection.
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const options = {
+        type: 'warning',
+        buttons: [t('shell.cancel'), t('shell.disconnectButton')],
+        defaultId: 0,
+        cancelId: 0,
+        message: t('shell.disconnectConfirm'),
+        detail: t('shell.disconnectConfirmDetail')
+    };
+    const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+    if (response !== 1) return false;
     store.delete('haUrl');
     app.relaunch();
     app.exit(0);
