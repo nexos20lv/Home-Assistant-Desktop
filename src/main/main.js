@@ -901,6 +901,9 @@ function createSetupWindow() {
     ipcMain.once('config-saved', () => {
         setupWindow.close();
         createMainWindow();
+        // Startup ran without a URL; check the connection now rather than at the next 5-minute tick.
+        evaluateSmartConnect().catch(() => {});
+        connectHaWebSocket().catch(() => {});
     });
 }
 
@@ -1027,8 +1030,9 @@ app.whenReady().then(async () => {
     Menu.setApplicationMenu(menu);
     console.log('Application menu created with Preferences option');
     
-    // On Windows, make menu visible by default
-    if (process.platform === 'win32') {
+    // On Windows, make menu visible by default. There is no main window yet when the setup
+    // wizard opened instead; throwing here would skip the rest of startup (tray, sensors...).
+    if (process.platform === 'win32' && mainWindow) {
         mainWindow.setAutoHideMenuBar(false);
         mainWindow.setMenuBarVisibility(true);
     }
