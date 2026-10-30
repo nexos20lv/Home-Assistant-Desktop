@@ -1503,22 +1503,19 @@ function startSensorReporting() {
 
     let previousCpuInfo = getCpuInfo();
 
+    // Only the finally block schedules the next tick. A return inside try still runs finally, so
+    // scheduling there as well would start a second timer on every early return, doubling the
+    // number of tick loops each time until they saturate the main process.
     const tick = async () => {
         if (sensorGeneration !== generation) return;
         try {
             const haUrl = getCurrentBaseUrl() || getEffectiveUrl();
             const apiToken = await getApiToken();
-            if (!haUrl || !apiToken) {
-                if (sensorGeneration === generation) sensorTickTimer = setTimeout(tick, 30000);
-                return;
-            }
+            if (!haUrl || !apiToken) return;
 
             const effectiveInterval = await getEffectiveSensorIntervalMs();
             const enoughTimeElapsed = (Date.now() - lastSensorReportAt) >= effectiveInterval;
-            if (!enoughTimeElapsed) {
-                if (sensorGeneration === generation) sensorTickTimer = setTimeout(tick, 30000);
-                return;
-            }
+            if (!enoughTimeElapsed) return;
 
             const currentCpuInfo = getCpuInfo();
             const idleDifference = currentCpuInfo.idle - previousCpuInfo.idle;
