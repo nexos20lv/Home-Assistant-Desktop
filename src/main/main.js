@@ -672,7 +672,10 @@ function createMainWindow() {
 
     mainWindow.setBrowserView(view);
 
-    view.webContents.on('did-fail-load', (_event, _errorCode, errorDescription, _validatedURL) => {
+    view.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+        // Only Home Assistant's own page failing means it is unreachable; a failing iframe card,
+        // or a load aborted by the next navigation (-3), doesn't.
+        if (!isMainFrame || errorCode === -3) return;
         addAppLog('warn', 'BrowserView failed to load page', errorDescription);
         smartConnectState.currentTarget = 'offline';
         emitNetworkStatus();
@@ -1063,6 +1066,13 @@ app.whenReady().then(async () => {
     }
     
     startSmartConnectMonitor();
+    // Waking up is when the network most often changed (left home, joined another Wi-Fi):
+    // re-check then rather than at the next 5-minute health check, once Wi-Fi has reconnected.
+    powerMonitor.on('resume', () => {
+        setTimeout(() => {
+            evaluateSmartConnect().catch((error) => addAppLog('error', 'SmartConnect check after resume failed', error.message));
+        }, 10000);
+    });
     scheduleSensorReplay();
     runStartupScripts();
     connectHaWebSocket().catch(() => {});
