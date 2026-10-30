@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, nativeTheme, powerMonitor, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, shell, Tray, Menu, globalShortcut, nativeTheme, powerMonitor, dialog, autoUpdater } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const fs = require('fs');
@@ -1987,6 +1987,12 @@ function getCpuInfo() {
 app.on('window-all-closed', function () {
     if (process.platform !== 'darwin') app.quit();
 });
+
+// The close button only hides the main window, so a real quit (the Quit menu item, Cmd+Q,
+// installing an update) has to get past that. Update installs close the windows before
+// before-quit fires, hence the autoUpdater event as well.
+app.on('before-quit', () => { isQuiting = true; });
+autoUpdater.on('before-quit-for-update', () => { isQuiting = true; });
 
 app.on('will-quit', () => {
     if (smartConnectState.timer) clearInterval(smartConnectState.timer);
