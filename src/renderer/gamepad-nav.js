@@ -273,6 +273,31 @@
         return null;
     };
 
+    // Bubble Card's slider buttons are pointer-driven ranges without ARIA. A press held for 200 ms
+    // (or moved sideways) starts a slide that sets the value under the pointer, so a long press of A
+    // in the middle jumped the light to 50 %. Returns the parts needed to step the value with
+    // left/right (by dragging) and to press the card's icon for A, or null for anything else.
+    const pointerSlider = (el) => {
+        const container = closest(el, (n) => n.classList.contains('slider-container'));
+        const track = container && container.querySelector('.range-slider');
+        const fill = track && track.querySelector('.range-fill');
+        if (!track || !fill) return null;
+        return { track, fill, icon: container.querySelector('.icon-container'), reversed: fill.classList.contains('fill-orientation-right') };
+    };
+
+    // The drag that moves a pointer slider one 10 % step left or right: from the current value's
+    // position to the next step's, which works whether the card slides absolutely or relatively.
+    const sliderStep = ({ track, fill, reversed }, dx) => {
+        const t = track.getBoundingClientRect();
+        const f = fill.getBoundingClientRect();
+        if (t.width < 4) return null;
+        const value = reversed ? (t.right - Math.max(f.left, t.left)) / t.width : (Math.min(f.right, t.right) - t.left) / t.width;
+        const next = Math.max(0, Math.min(1, Math.round((value + (reversed ? -dx : dx) * 0.1) * 10) / 10));
+        const toX = (v) => Math.max(t.left + 1, Math.min(t.right - 1, reversed ? t.right - v * t.width : t.left + v * t.width));
+        const y = t.top + t.height / 2;
+        return { from: [toX(value), y], to: [toX(next), y] };
+    };
+
     // Switches, checkboxes and radios toggle on Space; everything else activates on Enter.
     const activationKey = (el) => {
         if (SPACE_ROLES.has(el.getAttribute('role'))) return 'Space';
@@ -570,6 +595,10 @@
         if (!aimed) {
             const axis = sliderAxis(active);
             if (axis && axis === (DIRECTIONS[dir][0] ? 'x' : 'y')) return status({ key: ARROW_KEYS[dir], hold: true });
+        } else if (DIRECTIONS[dir][0]) {
+            const slider = pointerSlider(aimed);
+            const step = slider && sliderStep(slider, DIRECTIONS[dir][0]);
+            if (step) return status({ pointer: 'drag', at: step.from, to: step.to });
         }
         // Up and down stay on their side of the sidebar's edge; left and right cross it.
         const vertical = !!DIRECTIONS[dir][1];
@@ -595,8 +624,16 @@
         setPressed(true);
         if (el !== aimed) return status();
         // Clickable areas get a real press, so each card's own tap and long-press handling applies.
-        pointerAt = centerOf(el);
+        pointerAt = pressPoint(el);
         return status({ pointer: 'down', at: pointerAt });
+    };
+
+    // Where to press a clickable area: its middle, or the icon of a pointer slider (whose middle
+    // would set the value to 50 %).
+    const pressPoint = (el) => {
+        const slider = pointerSlider(el);
+        const icon = slider && slider.icon;
+        return icon && visibleRect(icon) ? centerOf(icon) : centerOf(el);
     };
 
     const releasePointer = () => {
@@ -629,7 +666,7 @@
             return status();
         }
         pulse();
-        if (el === aimed) return status({ pointer: 'hold', at: centerOf(el) });
+        if (el === aimed) return status({ pointer: 'hold', at: pressPoint(el) });
         el.dispatchEvent(new CustomEvent('action', { bubbles: true, composed: true, detail: { action: 'hold' } }));
         return status();
     };

@@ -1402,25 +1402,42 @@ function canGoBackInHomeAssistant(contents) {
     }
 }
 
-// Presses the mouse on a card area that has no keyboard focus, at a point in view CSS pixels.
-// 'down' and 'up' follow the A button, so the card times taps and long presses itself.
-function sendGamepadPointer(phase, [x, y]) {
+// Presses the mouse on a card area that has no keyboard focus, at points in view CSS pixels.
+// 'down' and 'up' follow the A button, so the card times taps and long presses itself; 'hold' is
+// a long press; 'drag' slides from one point to another (stepping a slider card).
+async function sendGamepadPointer(phase, [x, y], to) {
     const contents = view.webContents;
     const zoom = contents.getZoomFactor();
-    const point = { x: Math.round(x * zoom), y: Math.round(y * zoom) };
-    const button = { ...point, button: 'left', clickCount: 1 };
-    const up = () => {
+    const at = (px, py) => ({ x: Math.round(px * zoom), y: Math.round(py * zoom) });
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const release = (point) => {
         if (contents.isDestroyed()) return;
-        contents.sendInputEvent({ type: 'mouseUp', ...button });
+        contents.sendInputEvent({ type: 'mouseUp', ...point, button: 'left', clickCount: 1 });
         // Move the pointer away again so the card doesn't keep its hover look.
         contents.sendInputEvent({ type: 'mouseLeave', ...point });
     };
-    if (phase === 'down' || phase === 'hold') {
-        contents.sendInputEvent({ type: 'mouseMove', ...point });
-        contents.sendInputEvent({ type: 'mouseDown', ...button });
+    const start = at(x, y);
+    if (phase === 'up') {
+        release(start);
+        return;
     }
-    if (phase === 'up') up();
-    if (phase === 'hold') setTimeout(up, 650); // past Home Assistant's 500 ms long press
+    contents.sendInputEvent({ type: 'mouseMove', ...start });
+    contents.sendInputEvent({ type: 'mouseDown', ...start, button: 'left', clickCount: 1 });
+    if (phase === 'hold') {
+        await sleep(650); // past Home Assistant's 500 ms long press
+        release(start);
+    } else if (phase === 'drag') {
+        // Slide in steps, as a finger would: slider cards start sliding on sideways movement.
+        const end = at(to[0], to[1]);
+        for (let i = 1; i <= 6; i++) {
+            await sleep(16);
+            if (contents.isDestroyed()) return;
+            const stepX = Math.round(start.x + ((end.x - start.x) * i) / 6);
+            contents.sendInputEvent({ type: 'mouseMove', x: stepX, y: end.y, modifiers: ['leftButtonDown'] });
+        }
+        await sleep(16);
+        release(end);
+    }
 }
 
 // Scrolls whatever is under the focused element (or the middle of the view) with a wheel event.
@@ -1447,7 +1464,7 @@ function scrollGamepadView(dx, dy, smooth) {
     });
 }
 
-function applyGamepadResult(result, command) {
+async function applyGamepadResult(result, command) {
     if (!view || view.webContents.isDestroyed()) return;
     const rect = result.rect;
     gamepadState.focusRect = Array.isArray(rect) && rect.length === 4 && rect.every(Number.isFinite) ? rect : null;
@@ -1466,9 +1483,11 @@ function applyGamepadResult(result, command) {
         }
     }
 
-    const at = result.at;
-    if (['down', 'up', 'hold'].includes(result.pointer) && Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) {
-        sendGamepadPointer(result.pointer, at);
+    const isPoint = (point) => Array.isArray(point) && point.length === 2 && point.every(Number.isFinite);
+    if (['down', 'up', 'hold', 'drag'].includes(result.pointer) && isPoint(result.at)
+        && (result.pointer !== 'drag' || isPoint(result.to))) {
+        // Awaited, so the next command can't interleave with a long press or a drag.
+        await sendGamepadPointer(result.pointer, result.at, result.to);
         acted = true;
     }
 
@@ -1523,7 +1542,7 @@ async function performGamepadCommand(command) {
     if (!isGamepadCleanup(command) && view.webContents.isLoadingMainFrame()) return;
     const result = await runGamepadNav(command);
     if (!allowed() || view.webContents.isDestroyed()) return;
-    applyGamepadResult(result, command);
+    await applyGamepadResult(result, command);
 }
 
 // Commands run in order, since each starts from wherever the previous one moved focus.
