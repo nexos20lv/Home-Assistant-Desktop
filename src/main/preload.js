@@ -17,5 +17,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onThemeChanged: (callback) => {
         ipcRenderer.removeAllListeners('shell-theme-changed');
         ipcRenderer.on('shell-theme-changed', (_event, theme) => callback(theme));
+    },
+    sendGamepadCommand: (command) => ipcRenderer.send('gamepad-command', command),
+    onGamepadState: (callback) => {
+        ipcRenderer.removeAllListeners('gamepad-state');
+        ipcRenderer.on('gamepad-state', (_event, state) => callback(state));
     }
 });

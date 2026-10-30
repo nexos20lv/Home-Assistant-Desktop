@@ -44,8 +44,8 @@ src/
     renderer.js       ← Setup wizard logic
     styles.css        ← Setup wizard styles
     preferences.html  ← All settings UI (5 tabs: General/Sensors/Advanced/Servers/Translations)
-    inject.js         ← Exists as a file but is NOT loaded/injected anywhere in main.js currently
-    inject.css        ← Injected styles (also unused currently)
+    gamepad-input.js  ← Loaded by shell.html: reads the controller (Gamepad API), sends commands to main
+    gamepad-nav.js    ← Injected into the HA view's isolated world 1001: spatial navigation + focus ring
   locales/
     translations.json ← All UI strings for 8 languages (en/fr/es/de/it/pt/nl/he)
     i18n.js           ← Translation loader used in renderer contexts
@@ -72,7 +72,7 @@ Main Process (main.js)
 - `contextIsolation: true`, `nodeIntegration: false` everywhere
 - The HA BrowserView has **no preload** — maximum isolation
 - All IPC is typed via `contextBridge.exposeInMainWorld`
-- `inject.js` and `inject.css` are **not currently injected** into the BrowserView — the files exist but main.js has no code that loads them
+- Apart from the one-line theme sync (`executeJavaScript`), the only script run inside the BrowserView is `gamepad-nav.js`, injected on the first controller command with `executeJavaScriptInIsolatedWorld(1001, …)`. It shares HA's DOM but not its JavaScript, and exposes nothing to the page (see Controller navigation below)
 
 ### Key state (module-level in main.js)
 
@@ -105,6 +105,8 @@ tray              // Tray ref
 | `toggle-pip` | send | Show/hide PiP window |
 | `switch-server` | send | Switch active server by ID string |
 | `network-status` | receive | Status update from main → shell |
+| `gamepad-command` | send | Controller command (`navigate`, `select`, `back`, `tab`, `scroll`…), validated in main |
+| `gamepad-state` | receive | `{ enabled, focused }` — whether the shell should poll the controller |
 
 ### preload-prefs.js → main.js
 
@@ -149,6 +151,7 @@ tray              // Tray ref
 | `mediaPlayerEntity` | string | 'media_player.all' | Media key target |
 | `windowBounds` | object | {w:1200,h:800} | Saved window geometry |
 | `windowMaximized` | bool | false | Restore maximized state |
+| `gamepadNavigation` | bool | true | Controller navigation |
 | `app-language` | string | system | UI language code |
 
 **Secure storage (keytar):** API token stored as `TOKEN_SERVICE = 'home-assistant-desktop'`, `TOKEN_ACCOUNT = 'ha-api-token'`. Use `getApiToken()` / `setApiToken()` — never read it directly from the store.
@@ -169,7 +172,10 @@ request.on('response', (response) => {
 This was the root cause of the OOM crash fixed in v1.0.27. Never skip it — including fire-and-forget calls like `sendMediaService`.
 
 ### No innerHTML in injected scripts
-If `inject.js` is ever wired up to run inside the HA page again, use DOM API only (`createElement`, `setAttribute`, `textContent`). Never use `innerHTML` — XSS risk.
+Any script that runs inside the HA page (today only `gamepad-nav.js`) uses DOM API only (`createElement`, `setAttribute`, `textContent`). Never use `innerHTML` — XSS risk.
+
+### Controller navigation stays in the isolated world
+`gamepad-nav.js` runs in isolated world `1001` (0 is the page, 999 is Electron's preload world). Never move it to the page's main world or expose anything to the page. Main treats its return values as untrusted: keys are checked against `GAMEPAD_KEYS`, coordinates are validated, and the page can never trigger app-level actions (full screen is decided in main from the command alone). Commands are ignored unless the main window is focused and `gamepadNavigation` is on, checked when a command arrives and again when it runs (queued commands must not act after a blur); cleanup commands (releases, `cancel`, `hide`) always go through. Every call into the page is raced against a 1.5 s timeout, so a page that never answers can't stall the queue.
 
 ### execFile over exec for external commands
 Use `execFile('osascript', ['-e', script])` not `exec(\`osascript -e ${script}\`)`. Template literals in exec = command injection.

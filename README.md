@@ -50,6 +50,7 @@
         <li><b>Hardware Telemetry:</b> Reports CPU, RAM, Battery, Uptime, Active App, Mic/Cam usage, and Focus Mode.</li>
         <li><b>Media Keys Integration:</b> Control Home Assistant media players with your physical keyboard keys.</li>
         <li><b>Picture-in-Picture (PiP):</b> Floating, always-on-top window for live camera streams or controls.</li>
+        <li><b>Controller Navigation:</b> Drive dashboards, dialogs and menus with a gamepad, ideal for Windows handhelds and TVs.</li>
         <li><b>Biometric Security:</b> Lock the app with TouchID or Windows Hello.</li>
       </ul>
     </td>
@@ -140,6 +141,8 @@ Once configured with a **Long-Lived Access Token**, the app automatically create
 ## ⌨️ Shortcuts & Deep Linking
 
 - **Global Shortcut:** Press `Ctrl+Alt+H` (or `Cmd+Alt+H` on Mac) anywhere on your system to toggle the main window.
+- **Full Screen:** Press `F11` (`Ctrl+Cmd+F` on Mac) or a controller's **View** button to give Home Assistant the whole screen.
+- **Controller:** D-pad or left stick to move, **A** to select, **B** to go back, **Menu** for the sidebar. See the [Controller guide](docs/Controller.md).
 - **Deep Linking Protocol:** Register custom OS shortcuts or scripts using:
   ```bash
   ha-desktop://lovelace/security
@@ -156,6 +159,7 @@ Detailed documentation for advanced setup is available in our **[docs/](docs/)**
 - 🔌 **[Sensors Setup](docs/Sensors.md)** — Configuring Long-Lived Tokens and sensor polling
 - ⚡ **[Smart Connect & Failover](docs/Smart-Connect.md)** — Setting up local vs remote switching
 - 🗄️ **[Multi-Server Profiles](docs/Multi-Server.md)** — Managing multiple Home Assistant instances
+- 🎮 **[Controller Navigation](docs/Controller.md)** — Using a gamepad, button map, full screen
 - 🛠️ **[Development Guide](docs/Development.md)** — Building from source and contribution guide
 
 ---
