@@ -68,6 +68,39 @@ body.theme-light .app-actions button:hover {
     flex: 1;
 }
 
+/* Controller button map, shown in place of the title the first time a controller is used */
+.app-title.hint {
+    color: #7dd3fc;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+body.theme-light .app-title.hint {
+    color: #0369a1 !important;
+}
+
+.gamepad-indicator {
+    display: flex;
+    align-items: center;
+    margin-right: 10px;
+    color: #38bdf8;
+}
+
+.gamepad-indicator[hidden] {
+    display: none;
+}
+
+.gamepad-indicator svg {
+    width: 20px;
+    height: 20px;
+}
+
+body.theme-light .gamepad-indicator {
+    color: #0284c7;
+}
+
 .network-pill {
     font-size: 11px;
     font-weight: 700;

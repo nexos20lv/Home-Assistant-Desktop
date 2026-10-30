@@ -13,7 +13,12 @@
         <div class="app-icon">
             <img src="../assets/logo.svg" alt="HA" />
         </div>
-        <div class="app-title">Home Assistant Desktop</div>
+        <span id="gamepad-indicator" class="gamepad-indicator" title="Controller connected" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M7,6H17A6,6 0 0,1 23,12A6,6 0 0,1 17,18C15.22,18 13.63,17.23 12.53,16H11.47C10.37,17.23 8.78,18 7,18A6,6 0 0,1 1,12A6,6 0 0,1 7,6M6,9V11H4V13H6V15H8V13H10V11H8V9H6M15.5,12A1.5,1.5 0 0,0 14,13.5A1.5,1.5 0 0,0 15.5,15A1.5,1.5 0 0,0 17,13.5A1.5,1.5 0 0,0 15.5,12M18.5,9A1.5,1.5 0 0,0 17,10.5A1.5,1.5 0 0,0 18.5,12A1.5,1.5 0 0,0 20,10.5A1.5,1.5 0 0,0 18.5,9Z" />
+            </svg>
+        </span>
+        <div class="app-title" id="app-title">Home Assistant Desktop</div>
         <div id="network-pill" class="network-pill offline" data-i18n-offline="shell.offline">Offline</div>
         <div class="window-controls">
             <!-- Mac/Windows specific controls if we were fully custom, but we use titleBarOverlay for buttons -->
@@ -44,9 +49,13 @@
         </div>
     </div>
     <script src="../locales/i18n.js"></script>
+    <script src="gamepad-input.js"></script>
     <script>
+        const appTitle = document.getElementById('app-title');
+        const gamepadIndicator = document.getElementById('gamepad-indicator');
         const networkPill = document.getElementById('network-pill');
         let networkTarget = 'offline';
+        let gamepadHintTimer = null;
 
         // Initialize i18n titles for shell buttons
         function updateShellI18n() {
@@ -54,6 +63,7 @@
             document.getElementById('pip-btn').title = i18n.t('shell.pip', 'Picture-in-Picture');
             document.getElementById('params-btn').title = i18n.t('shell.preferences', 'Preferences');
             document.getElementById('disconnect-btn').title = i18n.t('shell.disconnect', 'Disconnect / Reset URL');
+            gamepadIndicator.title = i18n.t('shell.controllerConnected', 'Controller connected');
         }
 
         function renderNetworkPill() {
@@ -110,6 +120,21 @@
             });
         }
 
+        // gamepad-input.js: the first time a controller is used, show its button map in place of the title.
+        window.addEventListener('gamepad-activity', () => {
+            gamepadIndicator.hidden = false;
+            if (gamepadHintTimer !== null) return;
+            appTitle.textContent = i18n.t('shell.controllerHint', 'D-pad: move · A: select · B: back · Menu: sidebar · View: full screen');
+            appTitle.classList.add('hint');
+            gamepadHintTimer = setTimeout(() => {
+                appTitle.textContent = 'Home Assistant Desktop';
+                appTitle.classList.remove('hint');
+            }, 8000);
+        });
+
+        window.addEventListener('gamepad-idle', () => {
+            gamepadIndicator.hidden = true;
+        });
     </script>
 </body>
 

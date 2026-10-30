@@ -642,7 +642,17 @@ function createMainWindow() {
 
     // Load the shell (custom title bar)
     mainWindow.loadFile(path.join(__dirname, '../renderer/shell.html'));
-    mainWindow.webContents.once('did-finish-load', () => applyShellTheme());
+    mainWindow.webContents.once('did-finish-load', () => {
+        applyShellTheme();
+        sendGamepadState();
+    });
+
+    // The shell only reads the controller while this window is in the foreground.
+    mainWindow.on('focus', sendGamepadState);
+    mainWindow.on('blur', () => {
+        releaseGamepadKey();
+        sendGamepadState();
+    });
 
     // Create BrowserView for Home Assistant Content
     view = new BrowserView({
@@ -846,8 +856,8 @@ function createMainWindow() {
 function updateViewBounds() {
     if (!mainWindow || !view) return;
 
-    // Title bar height from shell.css
-    const titleBarHeight = 40;
+    // Title bar height from shell.css; in full screen Home Assistant gets the whole display.
+    const titleBarHeight = mainWindow.isFullScreen() ? 0 : 40;
 
     // With the 'hidden' titleBarStyle the content area includes the title bar, so fill it and
     // offset the top. getSize() would also count the invisible resize borders Windows adds
@@ -992,6 +1002,12 @@ app.whenReady().then(async () => {
                 { role: 'copy' },
                 { role: 'paste' }
             ]
+        },
+        {
+            label: 'View',
+            submenu: [
+                { role: 'togglefullscreen' }
+            ]
         }
     ];
     
@@ -1100,6 +1116,7 @@ ipcMain.handle('get-settings', async () => {
         shellTheme: store.get('shellTheme', 'system'),
         startupPath: store.get('startupPath', ''),
         hardwareAcceleration: store.get('hardwareAcceleration', true),
+        gamepadNavigation: store.get('gamepadNavigation', true),
         appVersion: app.getVersion()
     };
 });
@@ -1130,6 +1147,9 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     store.set('shellTheme', settings.shellTheme || 'system');
     store.set('startupPath', settings.startupPath || '');
     store.set('hardwareAcceleration', settings.hardwareAcceleration !== false);
+    store.set('gamepadNavigation', settings.gamepadNavigation !== false);
+    gamepadState.enabled = settings.gamepadNavigation !== false;
+    sendGamepadState();
 
     applyShellTheme(settings.shellTheme || 'system');
 
@@ -1258,6 +1278,213 @@ ipcMain.on('trigger-widget-action', (_event, action) => {
     if (action && action.type === 'media') {
         sendMediaService('media_play_pause');
     }
+});
+
+// ─── Controller (gamepad) navigation ─────────────────────────────────────────
+//
+// shell.html reads the controller (gamepad-input.js) and sends commands here. They are carried
+// out in the Home Assistant view by gamepad-nav.js, which runs in an isolated JavaScript world:
+// it shares the page's DOM but not its globals, so Home Assistant can neither see nor call it,
+// and the view still has no preload. Keys that must be trusted (Enter, Escape, slider arrows)
+// and scrolling are sent as native input events.
+
+const GAMEPAD_WORLD_ID = 1001; // 0 is the page's own world, 999 is Electron's preload world
+const GAMEPAD_COMMANDS = new Set(['navigate', 'press', 'select', 'hold', 'release', 'back', 'menu', 'tab', 'page', 'scroll', 'assist', 'fullscreen']);
+const GAMEPAD_KEYS = new Set(['Enter', 'Space', 'Escape', 'Up', 'Down', 'Left', 'Right', 'a']);
+const gamepadState = {
+    enabled: store.get('gamepadNavigation', true),
+    source: null,
+    queue: Promise.resolve(),
+    heldKey: null,
+    focusRect: null,
+    lastErrorAt: 0
+};
+
+function sendGamepadState() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('gamepad-state', {
+        enabled: gamepadState.enabled,
+        focused: mainWindow.isFocused()
+    });
+}
+
+function sanitizeGamepadCommand(raw) {
+    if (!raw || typeof raw !== 'object' || !GAMEPAD_COMMANDS.has(raw.type)) return null;
+    const command = { type: raw.type };
+    if (raw.type === 'navigate') {
+        if (!['up', 'down', 'left', 'right'].includes(raw.dir)) return null;
+        command.dir = raw.dir;
+        command.phase = ['press', 'repeat', 'release'].includes(raw.phase) ? raw.phase : 'press';
+    } else if (raw.type === 'tab' || raw.type === 'page') {
+        command.delta = raw.delta < 0 ? -1 : 1;
+    } else if (raw.type === 'scroll') {
+        const clamp = (value) => Math.max(-400, Math.min(400, Number(value) || 0));
+        command.dx = clamp(raw.dx);
+        command.dy = clamp(raw.dy);
+    }
+    return command;
+}
+
+async function runGamepadNav(command) {
+    const contents = view.webContents;
+    const call = `globalThis.__hadGamepad ? globalThis.__hadGamepad.run(${JSON.stringify(command)}) : null`;
+    let result = await contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code: call }]);
+    if (result === null) {
+        // First command since this page loaded: install the runtime, then retry.
+        if (gamepadState.source === null) {
+            gamepadState.source = fs.readFileSync(path.join(__dirname, '../renderer/gamepad-nav.js'), 'utf8');
+        }
+        await contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code: gamepadState.source }]);
+        result = await contents.executeJavaScriptInIsolatedWorld(GAMEPAD_WORLD_ID, [{ code: call }]);
+    }
+    return result && typeof result === 'object' ? result : {};
+}
+
+function sendGamepadKey(keyCode, { down = true, up = true, repeat = false } = {}) {
+    const contents = view.webContents;
+    if (!contents.isFocused()) contents.focus();
+    const modifiers = repeat ? ['isAutoRepeat'] : [];
+    if (down) {
+        contents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+        // Electron sends keyDown as a raw key-down, and Blink only fires keypress (which is what
+        // activates buttons and links on Enter) for an explicit char event.
+        if (keyCode === 'Enter') contents.sendInputEvent({ type: 'char', keyCode, modifiers });
+    }
+    if (up) contents.sendInputEvent({ type: 'keyUp', keyCode });
+}
+
+// Lets go of a slider arrow key held by the D-pad.
+function releaseGamepadKey() {
+    if (gamepadState.heldKey && view && !view.webContents.isDestroyed()) {
+        sendGamepadKey(gamepadState.heldKey, { down: false });
+    }
+    gamepadState.heldKey = null;
+}
+
+// Presses the mouse on a card area that has no keyboard focus, at a point in view CSS pixels.
+// 'down' and 'up' follow the A button, so the card times taps and long presses itself.
+function sendGamepadPointer(phase, [x, y]) {
+    const contents = view.webContents;
+    const zoom = contents.getZoomFactor();
+    const point = { x: Math.round(x * zoom), y: Math.round(y * zoom) };
+    const button = { ...point, button: 'left', clickCount: 1 };
+    const up = () => {
+        if (contents.isDestroyed()) return;
+        contents.sendInputEvent({ type: 'mouseUp', ...button });
+        // Move the pointer away again so the card doesn't keep its hover look.
+        contents.sendInputEvent({ type: 'mouseLeave', ...point });
+    };
+    if (phase === 'down' || phase === 'hold') {
+        contents.sendInputEvent({ type: 'mouseMove', ...point });
+        contents.sendInputEvent({ type: 'mouseDown', ...button });
+    }
+    if (phase === 'up') up();
+    if (phase === 'hold') setTimeout(up, 650); // past Home Assistant's 500 ms long press
+}
+
+// Scrolls whatever is under the focused element (or the middle of the view) with a wheel event.
+function scrollGamepadView(dx, dy, smooth) {
+    const contents = view.webContents;
+    const bounds = view.getBounds();
+    const zoom = contents.getZoomFactor();
+    let x = bounds.width / 2;
+    let y = bounds.height / 2;
+    if (gamepadState.focusRect) {
+        const [left, top, width, height] = gamepadState.focusRect;
+        x = (left + width / 2) * zoom;
+        y = (top + height / 2) * zoom;
+    }
+    contents.sendInputEvent({
+        type: 'mouseWheel',
+        x: Math.round(Math.max(1, Math.min(bounds.width - 2, x))),
+        y: Math.round(Math.max(1, Math.min(bounds.height - 2, y))),
+        // sendInputEvent wheel deltas point the opposite way to DOM wheel deltas.
+        deltaX: -dx,
+        deltaY: -dy,
+        hasPreciseScrollingDeltas: !smooth,
+        canScroll: true
+    });
+}
+
+function applyGamepadResult(result) {
+    if (!view || view.webContents.isDestroyed()) return;
+    const rect = result.rect;
+    gamepadState.focusRect = Array.isArray(rect) && rect.length === 4 && rect.every(Number.isFinite) ? rect : null;
+
+    if (typeof result.key === 'string' && GAMEPAD_KEYS.has(result.key)) {
+        if (result.hold) {
+            releaseGamepadKey();
+            gamepadState.heldKey = result.key;
+            sendGamepadKey(result.key, { up: false });
+        } else {
+            sendGamepadKey(result.key);
+        }
+    }
+
+    const at = result.at;
+    if (['down', 'up', 'hold'].includes(result.pointer) && Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) {
+        sendGamepadPointer(result.pointer, at);
+    }
+
+    if (result.history === 'back' && view.webContents.navigationHistory.canGoBack()) {
+        view.webContents.navigationHistory.goBack();
+    }
+
+    // Nothing more to focus that way: scroll instead, to reveal non-interactive content.
+    const step = view.getBounds().height * 0.4;
+    const scroll = { up: [0, -step], down: [0, step], left: [-step, 0], right: [step, 0] }[result.scroll];
+    if (scroll) scrollGamepadView(scroll[0], scroll[1], true);
+
+    if (typeof result.error === 'string' && Date.now() - gamepadState.lastErrorAt > 10000) {
+        gamepadState.lastErrorAt = Date.now();
+        addAppLog('warn', 'Controller navigation error', result.error);
+    }
+}
+
+async function performGamepadCommand(command) {
+    if (!view || view.webContents.isDestroyed()) return;
+    if (command.type === 'navigate' && command.phase !== 'press') {
+        // A slider owns the held direction: repeat its arrow key, then let go with the D-pad.
+        if (gamepadState.heldKey) {
+            if (command.phase === 'repeat') sendGamepadKey(gamepadState.heldKey, { up: false, repeat: true });
+            else releaseGamepadKey();
+            return;
+        }
+        if (command.phase === 'release') return;
+    }
+    applyGamepadResult(await runGamepadNav(command));
+}
+
+function handleGamepadCommand(command) {
+    if (!view || view.webContents.isDestroyed()) return;
+    if (command.type === 'fullscreen') {
+        mainWindow.setFullScreen(!mainWindow.isFullScreen());
+        return;
+    }
+    if (command.type === 'scroll') {
+        scrollGamepadView(command.dx, command.dy, false);
+        return;
+    }
+    if (command.type === 'page') {
+        scrollGamepadView(0, command.delta * view.getBounds().height * 0.8, true);
+        return;
+    }
+    // Everything else runs in order, since each step starts from wherever the last one moved focus.
+    gamepadState.queue = gamepadState.queue
+        .then(() => performGamepadCommand(command))
+        .catch((error) => {
+            if (Date.now() - gamepadState.lastErrorAt > 10000) {
+                gamepadState.lastErrorAt = Date.now();
+                addAppLog('warn', 'Controller command failed', error.message);
+            }
+        });
+}
+
+ipcMain.on('gamepad-command', (event, raw) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return;
+    if (!gamepadState.enabled || !mainWindow.isFocused()) return;
+    const command = sanitizeGamepadCommand(raw);
+    if (command) handleGamepadCommand(command);
 });
 
 function applyShellTheme(theme) {
