@@ -234,6 +234,52 @@ function normalizeUrl(rawUrl) {
     return `http://${value}`;
 }
 
+// Origins of every configured Home Assistant URL: local, remote, and all server profiles.
+function homeAssistantOrigins() {
+    const urls = [store.get('haUrl', ''), store.get('remoteUrl', '')];
+    for (const server of store.get('servers', []) || []) urls.push(server.localUrl, server.remoteUrl);
+    const origins = new Set();
+    for (const url of urls) {
+        try {
+            if (url) origins.add(new URL(normalizeUrl(url)).origin);
+        } catch (_) { /* not a URL */ }
+    }
+    return origins;
+}
+
+// Exact origin match: a prefix check would also accept look-alike hosts such as
+// http://homeassistant.local:8123.example.com.
+function isHomeAssistantUrl(url) {
+    try {
+        return homeAssistantOrigins().has(new URL(url).origin);
+    } catch (_) {
+        return false;
+    }
+}
+
+// window.open() policy for every window showing Home Assistant (the main view, PiP and the popups
+// they open): Home Assistant's own pages open as app windows, other http(s) links in the default
+// browser, anything else nowhere. Popups get the same policy, so it can't be escaped by nesting.
+function guardHomeAssistantPopups(contents) {
+    contents.setWindowOpenHandler(({ url }) => {
+        if (isHomeAssistantUrl(url)) {
+            return {
+                action: 'allow',
+                overrideBrowserWindowOptions: {
+                    width: 800,
+                    height: 600,
+                    autoHideMenuBar: true
+                }
+            };
+        }
+        if (url.startsWith('http:') || url.startsWith('https:')) {
+            shell.openExternal(url);
+        }
+        return { action: 'deny' };
+    });
+    contents.on('did-create-window', (child) => guardHomeAssistantPopups(child.webContents));
+}
+
 function normalizeDisplayScale(value) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return DEFAULT_DISPLAY_SCALE;
@@ -741,7 +787,16 @@ function createMainWindow() {
 
     // Permission Handling (Notifications, Camera, Mic)
     const { session } = require('electron');
-    session.fromPartition('persist:homeassistant').setPermissionRequestHandler((_webContents, permission, callback) => {
+    session.fromPartition('persist:homeassistant').setPermissionRequestHandler((webContents, permission, callback, details) => {
+        // Microphone, camera and notifications are for Home Assistant itself, not for other sites
+        // shown inside it (iframe and web page cards). Full screen grants no data and needs a
+        // click anyway, so embedded players keep it.
+        const requestingUrl = (details && details.requestingUrl) || webContents.getURL();
+        if (!isHomeAssistantUrl(requestingUrl)) {
+            callback(permission === 'fullscreen');
+            return;
+        }
+
         const allowNotifications = true;
         const allowMic = store.get('reportMic', true);
         const allowCamera = store.get('reportCamera', true);
@@ -818,27 +873,7 @@ function createMainWindow() {
     });
 
     // Handle external links in default browser (for the View)
-    view.webContents.setWindowOpenHandler(({ url }) => {
-        const haUrl = store.get('haUrl');
-        
-        // If it's a popup from the same origin, allow it as a native window
-        if (haUrl && url.startsWith(haUrl)) {
-            return {
-                action: 'allow',
-                overrideBrowserWindowOptions: {
-                    width: 800,
-                    height: 600,
-                    autoHideMenuBar: true
-                }
-            };
-        }
-
-        // Security: Only allow http and https protocols for external
-        if (url.startsWith('http:') || url.startsWith('https:')) {
-            shell.openExternal(url);
-        }
-        return { action: 'deny' };
-    });
+    guardHomeAssistantPopups(view.webContents);
 }
 
 function updateViewBounds() {
@@ -1203,6 +1238,7 @@ ipcMain.on('toggle-pip', () => {
         }
     });
 
+    guardHomeAssistantPopups(pipWindow.webContents);
     pipWindow.loadURL(view.webContents.getURL());
     pipWindow.on('closed', () => { pipWindow = null; });
 });

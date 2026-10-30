@@ -181,6 +181,9 @@ All `exec()` calls on Windows must include `{ windowsHide: true }` to suppress v
 ### No generic command-execution IPC
 No IPC channel may run a command, script or path chosen by a renderer. Startup scripts are run by main from the store, behind safe mode. (A `run-script` handler that exec'd any string it was sent existed unused until it was removed.)
 
+### Permissions and popups only for Home Assistant's origins
+`isHomeAssistantUrl()` compares exact origins against every configured URL (local, remote, all server profiles); never use a prefix match. Mic, camera and notifications are only granted to those origins (not to iframe or web page cards), and `guardHomeAssistantPopups()` (main view, PiP and their popups) only opens those origins as app windows; other http(s) links go to the default browser.
+
 ### Deep link origin validation
 `handleDeepLink` must validate that the target URL's origin matches the configured HA URL. Reject cross-origin paths silently.
 
