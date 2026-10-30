@@ -1286,6 +1286,70 @@ function applyShellTheme(theme) {
 }
 
 
+// Windows: one PowerShell run answers every probe of a sensor tick. Starting PowerShell costs
+// 0.3–0.8 s each time, so separate commands for the active app, DND, mic/camera and battery
+// were the bulk of the app's background CPU (and battery) use.
+const WINDOWS_PROBE_SCRIPT = String.raw`
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference = 'SilentlyContinue'
+Add-Type -Namespace HaDesktop -Name Native -MemberDefinition @'
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+[DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state);
+'@
+# A device is in use while some app's LastUsedTimeStop is 0. The values live in one subkey per
+# packaged app, and one per desktop app under NonPackaged.
+function Test-InUse([string]$device) {
+    $root = "HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\$device"
+    foreach ($key in Get-ChildItem $root -Recurse) {
+        $values = Get-ItemProperty $key.PSPath
+        if ($values.LastUsedTimeStop -eq 0 -and $values.LastUsedTimeStart -gt 0) { return $true }
+    }
+    return $false
+}
+$processId = [uint32]0
+[void][HaDesktop.Native]::GetWindowThreadProcessId([HaDesktop.Native]::GetForegroundWindow(), [ref]$processId)
+$notificationState = 0
+[void][HaDesktop.Native]::SHQueryUserNotificationState([ref]$notificationState)
+$battery = Get-CimInstance -ClassName Win32_Battery | Select-Object -First 1
+[pscustomobject]@{
+    activeApp = (Get-Process -Id $processId).ProcessName
+    notificationState = $notificationState
+    mic = Test-InUse 'microphone'
+    camera = Test-InUse 'webcam'
+    batteryPercent = $battery.EstimatedChargeRemaining
+    batteryMinutes = $battery.EstimatedRunTime
+} | ConvertTo-Json -Compress
+`;
+const WINDOWS_PROBE_COMMAND = Buffer.from(WINDOWS_PROBE_SCRIPT, 'utf16le').toString('base64');
+const QUNS_QUIET_TIME = 6; // SHQueryUserNotificationState: Do Not Disturb / Focus is on
+let windowsSnapshotPromise = null;
+
+// The probes of one tick run in parallel and share a single PowerShell run. Resolves to null
+// when PowerShell fails or takes longer than 15 s, so a stuck WMI query can't stall the tick.
+function getWindowsSnapshot() {
+    if (!windowsSnapshotPromise) {
+        windowsSnapshotPromise = new Promise((resolve) => {
+            execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', WINDOWS_PROBE_COMMAND],
+                { windowsHide: true, timeout: 15000 }, (error, stdout) => {
+                    if (error) {
+                        addAppLog('warn', 'Windows sensor probe failed', error.message);
+                        return resolve(null);
+                    }
+                    try {
+                        const lines = stdout.trim().split(/\r?\n/);
+                        resolve(JSON.parse(lines[lines.length - 1]));
+                    } catch (_) {
+                        resolve(null);
+                    }
+                });
+        }).finally(() => {
+            windowsSnapshotPromise = null;
+        });
+    }
+    return windowsSnapshotPromise;
+}
+
 function getBatteryInfo() {
     return new Promise((resolve) => {
         if (process.platform === 'darwin') {
@@ -1305,18 +1369,18 @@ function getBatteryInfo() {
                 }
             });
         } else if (process.platform === 'win32') {
-            const script = 'powershell -command "Get-WmiObject -Class Win32_Battery | Select-Object -First 1 | ForEach-Object { \\"$($_.EstimatedChargeRemaining),$($_.BatteryStatus),$($_.EstimatedRunTime)\\" }"';
-            exec(script, { windowsHide: true }, (error, stdout) => {
-                if (error || !stdout) return resolve(null);
-                const parts = stdout.trim().split(',');
-                if (parts.length < 2) return resolve(null);
-                const percent = parseInt(parts[0]);
-                const statusCode = parts[1];
-                const time = parts[2];
+            getWindowsSnapshot().then((snapshot) => {
+                const percent = snapshot ? Number(snapshot.batteryPercent) : NaN;
+                if (!Number.isFinite(percent)) return resolve(null); // no battery
+                const onBattery = powerMonitor.isOnBatteryPower();
+                // WMI reports 71582788 minutes while the estimate is unknown (e.g. on AC).
+                const minutes = Number(snapshot.batteryMinutes);
                 resolve({
-                    percent: percent,
-                    status: statusCode === '2' ? 'charging' : (statusCode === '1' ? 'discharging' : 'unknown'),
-                    timeRemaining: (time && time !== '715827882') ? `${Math.floor(time/60)}:${time%60}` : 'Calculating'
+                    percent,
+                    status: onBattery ? 'discharging' : (percent >= 100 ? 'full' : 'charging'),
+                    timeRemaining: onBattery && minutes > 0 && minutes < 71582788
+                        ? `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`
+                        : 'Calculating'
                 });
             });
         } else if (process.platform === 'linux') {
@@ -1351,10 +1415,8 @@ function getActiveApp() {
                 resolve(error ? 'Unknown' : stdout.trim());
             });
         } else if (process.platform === 'win32') {
-            const script = 'powershell -command "(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object -Property LastAccessTime -Descending | Select-Object -First 1).ProcessName"';
-            exec(script, { windowsHide: true }, (error, stdout) => {
-                resolve(error ? 'Unknown' : stdout.trim());
-            });
+            // The process that owns the foreground window.
+            getWindowsSnapshot().then((snapshot) => resolve((snapshot && snapshot.activeApp) || 'Unknown'));
         } else {
             resolve('Linux Desktop');
         }
@@ -1370,17 +1432,10 @@ function getMicCameraStatus() {
                 resolve({ mic: false, cam: camUsed }); // Mic is harder on Mac without specialized tools
             });
         } else if (process.platform === 'win32') {
-            const script = `powershell -Command "
-                $reg = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\webcam';
-                $cam = (Get-ItemProperty $reg -ErrorAction SilentlyContinue).LastUsedTimeStop -eq 0;
-                $regMic = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone';
-                $mic = (Get-ItemProperty $regMic -ErrorAction SilentlyContinue).LastUsedTimeStop -eq 0;
-                Write-Output \\"$cam,$mic\\" "`;
-            exec(script, { windowsHide: true }, (error, stdout) => {
-                if (error || !stdout) return resolve({ mic: false, cam: false });
-                const [cam, mic] = stdout.trim().split(',').map(v => v === 'True');
-                resolve({ mic, cam });
-            });
+            getWindowsSnapshot().then((snapshot) => resolve({
+                mic: !!(snapshot && snapshot.mic),
+                cam: !!(snapshot && snapshot.camera)
+            }));
         } else {
             resolve({ mic: false, cam: false });
         }
@@ -1394,9 +1449,7 @@ function getDNDStatus() {
                 resolve(!error && stdout.includes('1')); 
             });
         } else if (process.platform === 'win32') {
-            exec('powershell -Command "(Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings).NOC_GLOBAL_SETTING_TOASTS_ENABLED"', { windowsHide: true }, (error, stdout) => {
-                resolve(stdout.trim() === '0');
-            });
+            getWindowsSnapshot().then((snapshot) => resolve(!!snapshot && snapshot.notificationState === QUNS_QUIET_TIME));
         } else {
             resolve(false);
         }
@@ -1438,11 +1491,9 @@ async function getEffectiveSensorIntervalMs() {
         intervalMs = Math.max(intervalMs, 5 * 60 * 1000);
     }
 
-    if (powerSaverMode) {
-        const battery = await getBatteryInfo();
-        if (battery && battery.status !== 'charging') {
-            intervalMs = Math.max(intervalMs, 15 * 60 * 1000);
-        }
+    // Asked on every 30 s tick, so use the OS power state rather than spawning a battery probe.
+    if (powerSaverMode && powerMonitor.isOnBatteryPower()) {
+        intervalMs = Math.max(intervalMs, 15 * 60 * 1000);
     }
 
     return intervalMs;

@@ -239,11 +239,13 @@ Failed sensor POSTs go into `sensorDeliveryState.queue` (max 1000 items). A `set
 
 | Feature | Windows | macOS | Linux |
 |---|---|---|---|
-| Active app | PowerShell | AppleScript | — |
-| DND | PowerShell (Focus Assist registry) | AppleScript | — |
-| Mic/Camera | PowerShell | lsof / AppleScript | — |
-| Battery | PowerShell WMI | pmset | /sys/class/power_supply |
+| Active app | Foreground window's process | AppleScript | — |
+| DND | `SHQueryUserNotificationState` (quiet time) | AppleScript | — |
+| Mic/Camera | ConsentStore per-app `LastUsedTimeStop` (incl. NonPackaged) | lsof / AppleScript | — |
+| Battery | WMI percent + `powerMonitor` charging state | pmset | /sys/class/power_supply |
 | Wayland | — | — | auto-detected via WAYLAND_DISPLAY |
+
+On Windows all four probes run in **one** PowerShell process per sensor report (`getWindowsSnapshot()`, `execFile` + `-EncodedCommand`, 15 s timeout). Don't add separate PowerShell spawns per sensor: each start costs 0.3–0.8 s of CPU.
 
 ---
 
